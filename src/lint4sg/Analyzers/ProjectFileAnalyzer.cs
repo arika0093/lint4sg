@@ -45,13 +45,14 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
             return;
 
         var text = content.ToString();
-        AnalyzeProjectFileContent(context, text, content);
+        AnalyzeProjectFileContent(context, text, content, filePath);
     }
 
     private static void AnalyzeProjectFileContent(
         AdditionalFileAnalysisContext context,
         string text,
-        SourceText sourceText)
+        SourceText sourceText,
+        string filePath)
     {
         // Parse PackageReference elements
         // Look for: <PackageReference Include="PackageName" Version="X.Y.Z" />
@@ -78,7 +79,7 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
                 if (TryParseVersion(packageVersion, out var version) &&
                     version >= MaxRecommendedVersion)
                 {
-                    var lineSpan = GetLineSpan(sourceText, lineIndex);
+                    var lineSpan = GetLineSpan(sourceText, lineIndex, filePath);
                     context.ReportDiagnostic(Diagnostic.Create(
                         DiagnosticDescriptors.LSG014,
                         lineSpan,
@@ -99,7 +100,7 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
 
             if (!isAllowed)
             {
-                var lineSpan = GetLineSpan(sourceText, lineIndex);
+                var lineSpan = GetLineSpan(sourceText, lineIndex, filePath);
                 context.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.LSG012,
                     lineSpan,
@@ -133,13 +134,13 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
         return Version.TryParse(cleanVersion, out version!);
     }
 
-    private static Location GetLineSpan(SourceText sourceText, int lineIndex)
+    private static Location GetLineSpan(SourceText sourceText, int lineIndex, string filePath)
     {
         if (lineIndex < sourceText.Lines.Count)
         {
             var line = sourceText.Lines[lineIndex];
             return Location.Create(
-                string.Empty,
+                filePath,
                 line.Span,
                 new LinePositionSpan(
                     new LinePosition(lineIndex, 0),

@@ -94,7 +94,7 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
         if (RegisterMethods.Contains(methodName))
         {
-            AnalyzeRegisterSourceOutput(context, invocation, methodName);
+            AnalyzeRegisterSourceOutput(context, invocation);
         }
         else if (SyntaxProviderMethods.Contains(methodName))
         {
@@ -104,15 +104,12 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeRegisterSourceOutput(
         SyntaxNodeAnalysisContext context,
-        InvocationExpressionSyntax invocation,
-        string methodName)
+        InvocationExpressionSyntax invocation)
     {
-        // RegisterSourceOutput(source, action) - we check the type of 'source'
         var args = invocation.ArgumentList.Arguments;
         if (args.Count < 1)
             return;
 
-        // The first argument is the IncrementalValueProvider<T> source
         var sourceArg = args[0];
         var typeInfo = context.SemanticModel.GetTypeInfo(sourceArg.Expression);
         var type = typeInfo.Type ?? typeInfo.ConvertedType;
@@ -120,22 +117,20 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         if (type == null)
             return;
 
-        CheckTypeForNonDeterminism(context, type, invocation.GetLocation(), isRegisterMethod: true);
+        CheckTypeForNonDeterminism(context, type, invocation.GetLocation(), isRegisterMethod: true,
+            ImmutableHashSet<string>.Empty);
     }
 
     private static void AnalyzeSyntaxProviderReturn(
         SyntaxNodeAnalysisContext context,
         InvocationExpressionSyntax invocation)
     {
-        // The return type of the invocation is IncrementalValueProvider<T>
-        // We want to check T
         var typeInfo = context.SemanticModel.GetTypeInfo(invocation);
         var type = typeInfo.Type ?? typeInfo.ConvertedType;
 
         if (type == null)
             return;
 
-        // Unwrap IncrementalValueProvider<T> to get T
         if (type is INamedTypeSymbol namedType &&
             namedType.IsGenericType &&
             (namedType.Name == "IncrementalValueProvider" || namedType.Name == "IncrementalValuesProvider"))
@@ -143,7 +138,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             if (namedType.TypeArguments.Length > 0)
             {
                 CheckTypeForNonDeterminism(context, namedType.TypeArguments[0],
-                    invocation.GetLocation(), isRegisterMethod: false);
+                    invocation.GetLocation(), isRegisterMethod: false,
+                    ImmutableHashSet<string>.Empty);
             }
         }
     }
@@ -152,9 +148,10 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         SyntaxNodeAnalysisContext context,
         ITypeSymbol type,
         Location location,
-        bool isRegisterMethod)
+        bool isRegisterMethod,
+        ImmutableHashSet<string> visitedTypeIds)
     {
-        // Unwrap IncrementalValueProvider<T> and IncrementalValuesProvider<T>
+        // Unwrap IncrementalValueProvider<T> / IncrementalValuesProvider<T>
         if (type is INamedTypeSymbol namedTypeOuter &&
             namedTypeOuter.IsGenericType &&
             (namedTypeOuter.Name == "IncrementalValueProvider" || namedTypeOuter.Name == "IncrementalValuesProvider"))
@@ -166,113 +163,107 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         var typeName = type.Name;
         var fullTypeName = type.ToDisplayString();
 
-        // Check for array types first
-        if (type is IArrayTypeSymbol arrayType)
+        // Arrays -> LSG007 / LSG008
+        if (type is IArrayTypeSymbol)
         {
-            if (isRegisterMethod)
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG007,
-                    location,
-                    fullTypeName));
-            }
-            else
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG008,
-                    location,
-                    fullTypeName));
-            }
+            ReportDiagnostic(context, location, isRegisterMethod,
+                DiagnosticDescriptors.LSG007, DiagnosticDescriptors.LSG008, fullTypeName);
             return;
         }
 
-        // Check for collection types (List<T>, ImmutableArray<T>, etc.)
-        if (type is INamedTypeSymbol namedType && namedType.IsGenericType)
+        // Well-known collection types -> LSG007 / LSG008
+        if (type is INamedTypeSymbol collType && collType.IsGenericType &&
+            CollectionTypeNames.Contains(collType.Name))
         {
-            if (CollectionTypeNames.Contains(namedType.Name))
-            {
-                if (isRegisterMethod)
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG007,
-                        location,
-                        fullTypeName));
-                }
-                else
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG008,
-                        location,
-                        fullTypeName));
-                }
-                return;
-            }
+            ReportDiagnostic(context, location, isRegisterMethod,
+                DiagnosticDescriptors.LSG007, DiagnosticDescriptors.LSG008, fullTypeName);
+            return;
         }
 
-        // Check for known non-deterministic types
+        // Well-known non-deterministic type names -> LSG006 / LSG008
         if (NonDeterministicTypeNames.Contains(typeName))
         {
-            if (isRegisterMethod)
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG006,
-                    location,
-                    fullTypeName));
-            }
-            else
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG008,
-                    location,
-                    fullTypeName));
-            }
+            ReportDiagnostic(context, location, isRegisterMethod,
+                DiagnosticDescriptors.LSG006, DiagnosticDescriptors.LSG008, fullTypeName);
             return;
         }
 
-        // Check if it implements ISymbol or derives from SyntaxNode
-        if (type is INamedTypeSymbol checkType)
-        {
-            if (ImplementsInterface(checkType, "ISymbol", "Microsoft.CodeAnalysis") ||
-                DerivesFrom(checkType, "SyntaxNode", "Microsoft.CodeAnalysis") ||
-                DerivesFrom(checkType, "SemanticModel", "Microsoft.CodeAnalysis") ||
-                DerivesFrom(checkType, "Compilation", "Microsoft.CodeAnalysis"))
-            {
-                if (isRegisterMethod)
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG006,
-                        location,
-                        fullTypeName));
-                }
-                else
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG008,
-                        location,
-                        fullTypeName));
-                }
-                return;
-            }
+        if (type is not INamedTypeSymbol checkType)
+            return;
 
-            // Check for user-defined classes (not records or structs)
-            if (IsUserDefinedMutableClass(checkType))
+        // Implements ISymbol or derives from SyntaxNode/SemanticModel/Compilation -> LSG006 / LSG008
+        if (ImplementsInterface(checkType, "ISymbol", "Microsoft.CodeAnalysis") ||
+            DerivesFrom(checkType, "SyntaxNode", "Microsoft.CodeAnalysis") ||
+            DerivesFrom(checkType, "SemanticModel", "Microsoft.CodeAnalysis") ||
+            DerivesFrom(checkType, "Compilation", "Microsoft.CodeAnalysis"))
+        {
+            ReportDiagnostic(context, location, isRegisterMethod,
+                DiagnosticDescriptors.LSG006, DiagnosticDescriptors.LSG008, fullTypeName);
+            return;
+        }
+
+        // User-defined mutable class (not record/struct) -> LSG006 / LSG008
+        if (IsUserDefinedMutableClass(checkType))
+        {
+            ReportDiagnostic(context, location, isRegisterMethod,
+                DiagnosticDescriptors.LSG006, DiagnosticDescriptors.LSG008, fullTypeName);
+            return;
+        }
+
+        // Prevent infinite recursion for self-referential types
+        var typeId = checkType.ToDisplayString();
+        if (visitedTypeIds.Contains(typeId))
+            return;
+        var updatedVisited = visitedTypeIds.Add(typeId);
+
+        // Tuples: check each element type recursively
+        if (checkType.IsTupleType)
+        {
+            foreach (var element in checkType.TupleElements)
+                CheckTypeForNonDeterminism(context, element.Type, location, isRegisterMethod, updatedVisited);
+            return;
+        }
+
+        // Generic type arguments (ValueTuple<T1,T2>, wrapper records, etc.)
+        if (checkType.IsGenericType)
+        {
+            foreach (var typeArg in checkType.TypeArguments)
+                CheckTypeForNonDeterminism(context, typeArg, location, isRegisterMethod, updatedVisited);
+        }
+
+        // Records and structs: recursively check all property/field types
+        if (checkType.IsRecord || checkType.TypeKind == TypeKind.Struct)
+        {
+            foreach (var member in checkType.GetMembers())
             {
-                if (isRegisterMethod)
+                // Skip compiler-generated backing fields and other implicit members
+                if (member.IsImplicitlyDeclared)
+                    continue;
+
+                ITypeSymbol? memberType = member switch
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG006,
-                        location,
-                        fullTypeName));
-                }
-                else
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG008,
-                        location,
-                        fullTypeName));
-                }
+                    IPropertySymbol prop when !prop.IsStatic => prop.Type,
+                    IFieldSymbol field when !field.IsStatic => field.Type,
+                    _ => null
+                };
+                if (memberType != null)
+                    CheckTypeForNonDeterminism(context, memberType, location, isRegisterMethod, updatedVisited);
             }
         }
+    }
+
+    private static void ReportDiagnostic(
+        SyntaxNodeAnalysisContext context,
+        Location location,
+        bool isRegisterMethod,
+        DiagnosticDescriptor registerDescriptor,
+        DiagnosticDescriptor syntaxProviderDescriptor,
+        string fullTypeName)
+    {
+        context.ReportDiagnostic(Diagnostic.Create(
+            isRegisterMethod ? registerDescriptor : syntaxProviderDescriptor,
+            location,
+            fullTypeName));
     }
 
     private static bool ImplementsInterface(INamedTypeSymbol type, string interfaceName, string namespaceName)
@@ -297,24 +288,16 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
     private static bool IsUserDefinedMutableClass(INamedTypeSymbol type)
     {
-        // Is a class (not struct, not record, not enum, not interface, not delegate)
         if (type.TypeKind != TypeKind.Class)
             return false;
-
-        // Is not a record
         if (type.IsRecord)
             return false;
-
-        // Is not a system type
         var ns = type.ContainingNamespace?.ToString();
         if (ns != null && (ns.StartsWith("System", StringComparison.Ordinal) ||
                            ns.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal)))
             return false;
-
-        // Is not anonymous type
         if (type.IsAnonymousType)
             return false;
-
         return true;
     }
 }
