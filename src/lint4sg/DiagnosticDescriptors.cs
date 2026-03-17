@@ -111,7 +111,7 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor LSG011 = new(
         id: "LSG011",
         title: "Use raw string literal instead of consecutive AppendLine",
-        messageFormat: "Use a raw string literal ($$\"\"\"...\"\"\"/) instead of {0} or more consecutive AppendLine calls for multi-line code generation",
+        messageFormat: "Use a raw string literal ($$\"\"\"...\"\"\"]) instead of {0} or more consecutive AppendLine calls for multi-line code generation",
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,

@@ -36,10 +36,7 @@ public sealed class NormalizeWhitespaceAnalyzer : DiagnosticAnalyzer
         var symbol = context.SemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
         if (symbol == null)
         {
-            // Fall back to name-based detection
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.LSG009,
-                invocation.GetLocation()));
+            // If symbol can't be resolved, skip (avoid false positives for user-defined methods)
             return;
         }
 
