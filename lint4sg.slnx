@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/lint4sg/lint4sg.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/lint4sg.Tests/lint4sg.Tests.csproj" />
+  </Folder>
+</Solution>
