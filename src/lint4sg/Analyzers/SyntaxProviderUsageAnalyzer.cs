@@ -83,7 +83,10 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
             DiagnosticDescriptors.LSG002,
             invocation.GetLocation()));
 
-        // LSG003: Check if the predicate uses high-cost inheritance checks
+        // LSG003: Check if the predicate uses high-cost inheritance checks.
+        // Only the predicate (first argument) is checked — inheritance/interface checks
+        // are expensive there because the predicate runs on every syntax change.
+        // The transform (second argument) is the correct place for semantic checks.
         var arguments = invocation.ArgumentList.Arguments;
         if (arguments.Count >= 1)
         {
@@ -93,18 +96,6 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
                 context.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.LSG003,
                     predicateArg.GetLocation()));
-            }
-        }
-
-        // Also check the transform argument (second parameter) for LSG003
-        if (arguments.Count >= 2)
-        {
-            var transformArg = arguments[1];
-            if (ContainsHighCostMemberAccess(transformArg))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG003,
-                    transformArg.GetLocation()));
             }
         }
     }

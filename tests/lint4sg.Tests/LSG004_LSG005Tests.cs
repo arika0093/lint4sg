@@ -154,4 +154,70 @@ public class LSG004_LSG005_CancellationTokenTests
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
         await test.RunAsync();
     }
+
+    // ── Inferred lambda CancellationToken parameters ──────────────────────
+    // Common in incremental-generator callbacks: `(ctx, ct) => ...` where the
+    // parameter types are inferred from the Func<> delegate, not written explicitly.
+
+    [Fact]
+    public async Task Lambda_InferredCT_ForLoopWithoutThrowIfCancelled_ReportsLSG005()
+    {
+        // The lambda (ctx, ct) => { ... } has its CancellationToken 'ct' inferred
+        // from SyntaxValueProvider.CreateSyntaxProvider's Func<..., CancellationToken, ...>.
+        // LSG005 must still fire because the for-loop inside doesn't call
+        // ThrowIfCancellationRequested().
+        var code = """
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
+
+            public class Generator
+            {
+                public void Initialize(object context)
+                {
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) =>
+                        {
+                            for (int i = 0; i < 10; i++)
+                            {
+                            }
+                            return null!;
+                        });
+                }
+            }
+            """;
+
+        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .WithSpan(13, 17, 15, 18);
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task Lambda_InferredCT_ForwardedToSubMethod_NoLSG004()
+    {
+        // With a properly forwarded inferred CancellationToken, LSG004 must NOT fire.
+        var code = """
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
+
+            public class Generator
+            {
+                public void Initialize(object context)
+                {
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => DoWork(ct));
+                }
+
+                private object DoWork(CancellationToken token = default) => null!;
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        await test.RunAsync();
+    }
 }

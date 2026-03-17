@@ -83,4 +83,32 @@ public class LSG002_LSG003_SyntaxProviderTests
         var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code);
         await test.RunAsync();
     }
+
+    [Fact]
+    public async Task CreateSyntaxProvider_TransformWithInheritanceCheck_DoesNotReportLSG003()
+    {
+        // Moving semantic checks (like BaseType) to the transform is the *recommended*
+        // pattern — LSG003 must not fire there, only in the predicate.
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(object context)
+                {
+                    var provider = new SyntaxValueProvider();
+                    var result = provider.CreateSyntaxProvider(
+                        (node, ct) => node is object,
+                        (ctx, ct) => ctx.GetType().BaseType);
+                }
+            }
+            """;
+
+        // Only LSG002 should be reported — NOT LSG003 for the transform
+        var expected = new DiagnosticResult("LSG002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+            .WithSpan(8, 22, 10, 49);
+
+        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
 }

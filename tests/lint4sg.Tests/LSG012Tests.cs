@@ -132,4 +132,48 @@ public class LSG012_ProjectFileTests
 
         await RunProjectFileTestAsync(csproj);
     }
+
+    [Fact]
+    public async Task MultilinePackageReference_ReportsLSG012()
+    {
+        // Multi-line format where Include and Version are separated across elements.
+        // The old line-split parser would have missed the Version child element;
+        // the XML-based parser handles this correctly.
+        // Line 3 = "    <PackageReference Include="Newtonsoft.Json">" (48 chars)
+        var csproj = """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json">
+                  <Version>13.0.3</Version>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """;
+
+        await RunProjectFileTestAsync(csproj,
+            new DiagnosticResult("LSG012", DiagnosticSeverity.Warning)
+                .WithSpan("test.csproj", 3, 1, 3, 49)
+                .WithArguments("Newtonsoft.Json"));
+    }
+
+    [Fact]
+    public async Task MultilineCodeAnalysisCSharp_Version5_ReportsLSG014()
+    {
+        // Same multi-line format but for the version-gating rule.
+        // Line 3 = "    <PackageReference Include="Microsoft.CodeAnalysis.CSharp">" (62 chars)
+        var csproj = """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Microsoft.CodeAnalysis.CSharp">
+                  <Version>5.0.0</Version>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """;
+
+        await RunProjectFileTestAsync(csproj,
+            new DiagnosticResult("LSG014", DiagnosticSeverity.Warning)
+                .WithSpan("test.csproj", 3, 1, 3, 63)
+                .WithArguments("5.0.0"));
+    }
 }

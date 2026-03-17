@@ -11,6 +11,9 @@ on:
       - '**.cs'
       - '.github/workflows/test.yaml'
 
+permissions:
+  contents: read
+
 env:
   DOTNET_VERSION: '8.0.x'
 

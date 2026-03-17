@@ -63,8 +63,20 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
         var ctParams = ImmutableList.CreateBuilder<string>();
         foreach (var param in parameterList.Parameters)
         {
-            if (param.Type == null) continue;
-            var typeSymbol = semanticModel.GetSymbolInfo(param.Type).Symbol as ITypeSymbol;
+            ITypeSymbol? typeSymbol;
+            if (param.Type != null)
+            {
+                typeSymbol = semanticModel.GetSymbolInfo(param.Type).Symbol as ITypeSymbol;
+            }
+            else
+            {
+                // Inferred lambda parameter type (common in `(ctx, ct) => ...` callbacks).
+                // GetDeclaredSymbol resolves the parameter symbol whose Type reflects the
+                // delegate's signature even when no explicit type annotation is written.
+                var paramSymbol = semanticModel.GetDeclaredSymbol(param) as IParameterSymbol;
+                typeSymbol = paramSymbol?.Type;
+            }
+
             if (typeSymbol != null && IsCancellationToken(typeSymbol))
             {
                 ctParams.Add(param.Identifier.Text);

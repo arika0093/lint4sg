@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Xml;
+using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
@@ -54,41 +56,51 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
         SourceText sourceText,
         string filePath)
     {
-        // Parse PackageReference elements
-        // Look for: <PackageReference Include="PackageName" Version="X.Y.Z" />
-        // or: <PackageReference Include="PackageName" Version="X.Y.Z">
-        var lines = text.Split('\n');
-        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        // Parse the project file as XML so that multi-line PackageReference elements
+        // (where attributes or child elements span multiple lines) are handled correctly.
+        XDocument doc;
+        try
         {
-            var line = lines[lineIndex].Trim();
+            doc = XDocument.Parse(text, LoadOptions.SetLineInfo);
+        }
+        catch (XmlException)
+        {
+            // Not valid XML – skip analysis rather than crashing.
+            return;
+        }
 
-            if (!line.Contains("PackageReference", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var packageName = ExtractAttributeValue(line, "Include");
-            var packageVersion = ExtractAttributeValue(line, "Version");
-
+        foreach (var element in doc.Descendants("PackageReference"))
+        {
+            var packageName = (string?)element.Attribute("Include");
             if (packageName == null)
                 continue;
 
-            // LSG014: Check Microsoft.CodeAnalysis.CSharp version
-            if (string.Equals(packageName, CodeAnalysisCSharpPackage, StringComparison.OrdinalIgnoreCase) &&
-                packageVersion != null)
+            // Version may be an XML attribute OR a child element, e.g.:
+            //   <PackageReference Include="Foo" Version="1.0" />
+            //   <PackageReference Include="Foo"><Version>1.0</Version></PackageReference>
+            var packageVersion = (string?)element.Attribute("Version")
+                                 ?? element.Element("Version")?.Value;
+
+            // Map the element's start line back to a SourceText span for diagnostics.
+            var lineInfo = element as IXmlLineInfo;
+            var lineIndex = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber - 1 : 0;
+            var location = GetLineSpan(sourceText, lineIndex, filePath);
+
+            // LSG014: Microsoft.CodeAnalysis.CSharp version >= 5.0.0
+            if (string.Equals(packageName, CodeAnalysisCSharpPackage, StringComparison.OrdinalIgnoreCase)
+                && packageVersion != null)
             {
-                // Parse the version
-                if (TryParseVersion(packageVersion, out var version) &&
-                    version >= MaxRecommendedVersion)
+                if (TryParseVersion(packageVersion, out var version) && version >= MaxRecommendedVersion)
                 {
-                    var lineSpan = GetLineSpan(sourceText, lineIndex, filePath);
                     context.ReportDiagnostic(Diagnostic.Create(
                         DiagnosticDescriptors.LSG014,
-                        lineSpan,
+                        location,
                         packageVersion));
                 }
             }
 
-            // LSG012: Check for external dependencies
-            bool isAllowed = false;
+            // LSG012: External (non-CodeAnalysis) NuGet package
+            var isAllowed = false;
             foreach (var prefix in AllowedPackagePrefixes)
             {
                 if (packageName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
@@ -100,30 +112,13 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
 
             if (!isAllowed)
             {
-                var lineSpan = GetLineSpan(sourceText, lineIndex, filePath);
                 context.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.LSG012,
-                    lineSpan,
+                    location,
                     packageName));
             }
         }
     }
-
-    private static string? ExtractAttributeValue(string line, string attributeName)
-    {
-        var pattern = attributeName + "=\"";
-        var start = line.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
-        if (start < 0)
-            return null;
-
-        start += pattern.Length;
-        var end = line.IndexOf('"', start);
-        if (end < 0)
-            return null;
-
-        return line.Substring(start, end - start);
-    }
-
     private static bool TryParseVersion(string versionString, out Version version)
     {
         // Handle version strings with prefixes like "4.x.x" or "~4.x.x"
