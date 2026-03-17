@@ -1,0 +1,26 @@
+# Build artifacts
+bin/
+obj/
+*.user
+
+# IDE files
+.vs/
+.idea/
+*.suo
+*.sdf
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+
+# .NET
+*.dll
+*.pdb
+# Keep project DLLs tracked? Usually not.
+

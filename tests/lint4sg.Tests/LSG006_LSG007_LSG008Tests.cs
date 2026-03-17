@@ -1,0 +1,369 @@
+using System.Threading.Tasks;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Testing;
+using Microsoft.CodeAnalysis.Testing;
+#pragma warning disable CS0618
+using Microsoft.CodeAnalysis.Testing.Verifiers;
+#pragma warning restore CS0618
+using Xunit;
+using lint4sg.Analyzers;
+
+namespace lint4sg.Tests;
+
+/// <summary>
+/// Tests for LSG006, LSG007, LSG008 — DeterministicValueAnalyzer.
+/// </summary>
+public class LSG006_LSG007_LSG008_DeterministicValueTests
+{
+    // Stubs that expose IncrementalValueProvider and the register methods.
+    private const string IncrementalStubs = """
+        namespace Microsoft.CodeAnalysis
+        {
+            public interface ISymbol { }
+            public abstract class SemanticModel { }
+            public abstract class Compilation { }
+            public abstract class SyntaxNode { }
+
+            public struct IncrementalValueProvider<T> { }
+            public struct IncrementalValuesProvider<T> { }
+
+            public class IncrementalGeneratorInitializationContext
+            {
+                public void RegisterSourceOutput<T>(
+                    IncrementalValueProvider<T> source,
+                    System.Action<object, T> action) { }
+
+                public void RegisterImplementationSourceOutput<T>(
+                    IncrementalValueProvider<T> source,
+                    System.Action<object, T> action) { }
+            }
+
+            public class SyntaxValueProvider
+            {
+                public IncrementalValuesProvider<T> CreateSyntaxProvider<T>(
+                    System.Func<object, System.Threading.CancellationToken, bool> predicate,
+                    System.Func<object, System.Threading.CancellationToken, T> transform)
+                    => default;
+
+                public IncrementalValuesProvider<T> ForAttributeWithMetadataName<T>(
+                    string fullyQualifiedMetadataName,
+                    System.Func<object, System.Threading.CancellationToken, bool> predicate,
+                    System.Func<object, System.Threading.CancellationToken, T> transform)
+                    => default;
+            }
+        }
+        """;
+
+    // Needed for `record` types on netstandard2.0 targets in tests
+    private const string IsExternalInitStub = """
+        namespace System.Runtime.CompilerServices
+        {
+            internal static class IsExternalInit { }
+        }
+        """;
+
+    private static Task RunTestAsync(string code, params DiagnosticResult[] expected)
+    {
+        var test = new CSharpAnalyzerTest<DeterministicValueAnalyzer, XUnitVerifier>
+        {
+            TestState = { Sources = { code, IncrementalStubs, IsExternalInitStub } }
+        };
+        test.TestState.ExpectedDiagnostics.AddRange(expected);
+        return test.RunAsync();
+    }
+
+    // ── LSG006: direct non-deterministic types ────────────────────────────
+
+    [Fact]
+    public async Task ISymbol_DirectToRegisterSourceOutput_ReportsLSG006()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<ISymbol> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, sym) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
+                .WithSpan(9, 9, 9, 62)
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+    }
+
+    [Fact]
+    public async Task SemanticModel_DirectToRegisterSourceOutput_ReportsLSG006()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<SemanticModel> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, sm) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
+                .WithSpan(9, 9, 9, 61)
+                .WithArguments("Microsoft.CodeAnalysis.SemanticModel"));
+    }
+
+    [Fact]
+    public async Task Compilation_DirectToRegisterSourceOutput_ReportsLSG006()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<Compilation> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, comp) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
+                .WithSpan(9, 9, 9, 63)
+                .WithArguments("Microsoft.CodeAnalysis.Compilation"));
+    }
+
+    [Fact]
+    public async Task UserDefinedMutableClass_ReportsLSG006()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class MyData
+            {
+                public string Name { get; set; } = "";
+            }
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<MyData> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, d) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
+                .WithSpan(14, 9, 14, 60)
+                .WithArguments("MyData"));
+    }
+
+    // ── LSG006: non-deterministic type inside record (child / grandchild) ─
+
+    [Fact]
+    public async Task RecordWithISymbolProperty_ReportsLSG006()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public record MyInfo(string Name, ISymbol Symbol);
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<MyInfo> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, info) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
+                .WithSpan(11, 9, 11, 63)
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+    }
+
+    [Fact]
+    public async Task RecordWithCompilationNestedTwoLevels_ReportsLSG006()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public record Inner(string Text, Compilation Comp);
+            public record Outer(int Id, Inner Data);
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<Outer> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, o) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
+                .WithSpan(12, 9, 12, 60)
+                .WithArguments("Microsoft.CodeAnalysis.Compilation"));
+    }
+
+    [Fact]
+    public async Task RecordWithOnlyEquatableMembers_NoLSG006()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public record MyInfo(string Name, int Count);
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<MyInfo> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, info) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    // ── LSG007: array / collection type ──────────────────────────────────
+
+    [Fact]
+    public async Task ArrayType_ReportsLSG007()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<string[]> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, arr) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG007", DiagnosticSeverity.Error)
+                .WithSpan(9, 9, 9, 62)
+                .WithArguments("string[]"));
+    }
+
+    [Fact]
+    public async Task ListType_ReportsLSG007()
+    {
+        var code = """
+            using System.Collections.Generic;
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<List<string>> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, list) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG007", DiagnosticSeverity.Error)
+                .WithSpan(10, 9, 10, 63)
+                .WithArguments("System.Collections.Generic.List<string>"));
+    }
+
+    // ── LSG008: SyntaxProvider returns non-deterministic type (warning) ───
+
+    [Fact]
+    public async Task SyntaxProvider_ISymbolReturn_ReportsLSG008()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<ISymbol>(
+                        (node, ct) => true,
+                        (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
+                .WithSpan(7, 22, 9, 32)
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+    }
+
+    [Fact]
+    public async Task SyntaxProvider_RecordWithSemanticModelChild_ReportsLSG008()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public record MyInfo(string Name, SemanticModel Sem);
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<MyInfo>(
+                        (node, ct) => true,
+                        (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
+                .WithSpan(9, 22, 11, 32)
+                .WithArguments("Microsoft.CodeAnalysis.SemanticModel"));
+    }
+
+    [Fact]
+    public async Task SyntaxProvider_RecordWithEquatableMembers_NoWarning()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public record MyInfo(string Name, int Count);
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<MyInfo>(
+                        (node, ct) => true,
+                        (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+}
