@@ -8,7 +8,8 @@ namespace lint4sg.Analyzers;
 
 /// <summary>
 /// LSG002: Warns when CreateSyntaxProvider is used instead of ForAttributeWithMetadataName.
-/// LSG003: Errors when CreateSyntaxProvider predicate uses expensive inheritance checks.
+/// LSG003: Errors when CreateSyntaxProvider performs expensive inheritance checks
+/// without prior filtering, especially through GetDeclaredSymbol in the transform.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
@@ -83,19 +84,31 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
             DiagnosticDescriptors.LSG002,
             invocation.GetLocation()));
 
-        // LSG003: Check if the predicate uses high-cost inheritance checks.
-        // Only the predicate (first argument) is checked — inheritance/interface checks
-        // are expensive there because the predicate runs on every syntax change.
-        // The transform (second argument) is the correct place for semantic checks.
+        // LSG003: Check for expensive inheritance/interface/attribute scans.
+        // In the predicate these checks are always expensive because the predicate
+        // runs on every syntax change. In the transform they are still not allowed
+        // when CreateSyntaxProvider is being used to scan broadly via GetDeclaredSymbol
+        // instead of pre-filtering (typically with ForAttributeWithMetadataName).
         var arguments = invocation.ArgumentList.Arguments;
         if (arguments.Count >= 1)
         {
             var predicateArg = arguments[0];
-            if (ContainsHighCostMemberAccess(predicateArg))
+            if (ContainsExpensivePredicateCheck(predicateArg))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.LSG003,
                     predicateArg.GetLocation()));
+            }
+        }
+
+        if (arguments.Count >= 2)
+        {
+            var transformArg = arguments[1];
+            if (ContainsExpensiveTransformScan(transformArg))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.LSG003,
+                    transformArg.GetLocation()));
             }
         }
     }
@@ -123,6 +136,27 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
                     return true;
             }
         }
+        return false;
+    }
+
+    private static bool ContainsExpensivePredicateCheck(SyntaxNode node) =>
+        ContainsHighCostMemberAccess(node);
+
+    private static bool ContainsExpensiveTransformScan(SyntaxNode node) =>
+        ContainsGetDeclaredSymbolInvocation(node) && ContainsHighCostMemberAccess(node);
+
+    private static bool ContainsGetDeclaredSymbolInvocation(SyntaxNode node)
+    {
+        foreach (var descendant in node.DescendantNodesAndSelf())
+        {
+            if (descendant is InvocationExpressionSyntax invocation &&
+                invocation.Expression is MemberAccessExpressionSyntax memberAccess &&
+                memberAccess.Name.Identifier.Text == "GetDeclaredSymbol")
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 }

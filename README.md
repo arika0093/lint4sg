@@ -90,9 +90,9 @@ Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/
 
 ### LSG003
 
-**Avoid high-cost SyntaxProvider predicate**
+**Avoid broad inheritance scans in CreateSyntaxProvider**
 
-Inheritance checks (`.Interfaces`, `.BaseType`, `IsAssignableTo`, etc.) inside a `SyntaxProvider` predicate run on every syntax change for every node. They require symbol resolution which is expensive. Move such checks to the `transform` step, or use `ForAttributeWithMetadataName` to pre-filter.
+Inheritance checks (`.Interfaces`, `.BaseType`, `IsAssignableTo`, `.GetAttributes()`, etc.) inside `CreateSyntaxProvider` are expensive. Doing them in the predicate is bad, and doing them in the transform via `GetDeclaredSymbol(...)` is still a broad semantic scan unless you already narrowed the pipeline with a marker-based pre-filter such as `ForAttributeWithMetadataName`.
 
 ```csharp
 // ❌ LSG003
@@ -100,13 +100,23 @@ var result = context.SyntaxProvider.CreateSyntaxProvider(
     predicate: (node, ct) => node.GetType().BaseType != null, // expensive!
     transform: (ctx, ct) => ctx.Node);
 
-// ✅ OK — semantic checks belong in the transform step
+// ❌ LSG003 — GetDeclaredSymbol-based inheritance checks in the transform
+// are still a broad scan when CreateSyntaxProvider is the only filter.
 var result = context.SyntaxProvider.CreateSyntaxProvider(
     predicate: (node, ct) => node is ClassDeclarationSyntax,
     transform: (ctx, ct) => {
         var cls = (ClassDeclarationSyntax)ctx.Node;
         var symbol = ctx.SemanticModel.GetDeclaredSymbol(cls, ct);
         return symbol?.BaseType?.Name == "MyBase" ? symbol : null;
+    });
+
+// ✅ OK — pre-filter first, then perform semantic checks on the matched nodes only
+var result = context.SyntaxProvider.ForAttributeWithMetadataName(
+    "MyNamespace.MyMarkerAttribute",
+    predicate: (node, ct) => node is ClassDeclarationSyntax,
+    transform: (ctx, ct) => {
+        var symbol = (INamedTypeSymbol)ctx.TargetSymbol;
+        return symbol.BaseType?.Name == "MyBase" ? symbol : null;
     });
 ```
 
