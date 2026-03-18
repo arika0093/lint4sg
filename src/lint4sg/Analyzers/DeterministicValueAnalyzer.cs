@@ -163,6 +163,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         var typeName = type.Name;
         var fullTypeName = type.ToDisplayString();
 
+        // Primitive/runtime special types are deterministic by themselves, so we can stop here.
+        // Strings are handled later because they are the common reference-type exception.
         if (type.SpecialType != SpecialType.None &&
             type.SpecialType != SpecialType.System_String &&
             type.TypeKind != TypeKind.Struct)
@@ -355,14 +357,4 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], type));
     }
 
-    private static bool IsUserDefinedMutableClass(INamedTypeSymbol type)
-    {
-        if (type.TypeKind != TypeKind.Class || type.IsRecord || type.IsAnonymousType)
-            return false;
-
-        var ns = type.ContainingNamespace?.ToString();
-        return ns == null ||
-               (!ns.StartsWith("System", StringComparison.Ordinal) &&
-                !ns.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal));
-    }
 }
