@@ -104,7 +104,7 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         if (arguments.Count >= 2)
         {
             var transformArg = arguments[1];
-            if (ContainsExpensiveTransformScan(transformArg))
+            if (ContainsExpensiveTransformScan(arguments[0], transformArg))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.LSG003,
@@ -142,8 +142,10 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
     private static bool ContainsExpensivePredicateCheck(SyntaxNode node) =>
         ContainsHighCostMemberAccess(node);
 
-    private static bool ContainsExpensiveTransformScan(SyntaxNode node) =>
-        ContainsGetDeclaredSymbolInvocation(node) && ContainsHighCostMemberAccess(node);
+    private static bool ContainsExpensiveTransformScan(SyntaxNode predicate, SyntaxNode transform) =>
+        IsBroadPredicate(predicate) &&
+        ContainsGetDeclaredSymbolInvocation(transform) &&
+        ContainsHighCostMemberAccess(transform);
 
     private static bool ContainsGetDeclaredSymbolInvocation(SyntaxNode node)
     {
@@ -157,6 +159,70 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
             }
         }
 
+        return false;
+    }
+
+    private static bool IsBroadPredicate(SyntaxNode node)
+    {
+        node = UnwrapNode(node);
+
+        if (node is LambdaExpressionSyntax lambda)
+        {
+            return lambda.Body switch
+            {
+                BlockSyntax block => TryGetSingleReturnExpression(block, out var expression) && IsBroadPredicateExpression(expression),
+                ExpressionSyntax expression => IsBroadPredicateExpression(expression),
+                _ => false
+            };
+        }
+
+        return IsBroadPredicateExpression(node);
+    }
+
+    private static bool IsBroadPredicateExpression(SyntaxNode node)
+    {
+        node = UnwrapNode(node);
+
+        return node switch
+        {
+            LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.TrueLiteralExpression) => true,
+            IsPatternExpressionSyntax => true,
+            BinaryExpressionSyntax binary when binary.IsKind(SyntaxKind.IsExpression) => true,
+            BinaryExpressionSyntax binary when binary.IsKind(SyntaxKind.LogicalAndExpression) =>
+                IsBroadPredicateExpression(binary.Left) && IsBroadPredicateExpression(binary.Right),
+            ParenthesizedLambdaExpressionSyntax lambda => IsBroadPredicate(lambda),
+            SimpleLambdaExpressionSyntax lambda => IsBroadPredicate(lambda),
+            _ => false
+        };
+    }
+
+    private static SyntaxNode UnwrapNode(SyntaxNode node)
+    {
+        while (true)
+        {
+            switch (node)
+            {
+                case ArgumentSyntax argument:
+                    node = argument.Expression;
+                    continue;
+                case ParenthesizedExpressionSyntax parenthesized:
+                    node = parenthesized.Expression;
+                    continue;
+                default:
+                    return node;
+            }
+        }
+    }
+
+    private static bool TryGetSingleReturnExpression(BlockSyntax block, out ExpressionSyntax expression)
+    {
+        if (block.Statements.Count == 1 && block.Statements[0] is ReturnStatementSyntax { Expression: { } returnExpression })
+        {
+            expression = returnExpression;
+            return true;
+        }
+
+        expression = null!;
         return false;
     }
 }
