@@ -65,6 +65,37 @@ public class LSG012_ProjectFileTests
     }
 
     [Fact]
+    public async Task ExternalPackageWithPrivateAssetsAll_NoLSG012()
+    {
+        var csproj = """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Polyfill" Version="9.22.0" PrivateAssets="all" />
+              </ItemGroup>
+            </Project>
+            """;
+
+        await RunProjectFileTestAsync(csproj);
+    }
+
+    [Fact]
+    public async Task ExternalPackageWithPrivateAssetsElementAll_NoLSG012()
+    {
+        var csproj = """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Polyfill">
+                  <Version>9.22.0</Version>
+                  <PrivateAssets>all</PrivateAssets>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """;
+
+        await RunProjectFileTestAsync(csproj);
+    }
+
+    [Fact]
     public async Task MultipleExternalPackages_ReportsLSG012ForEach()
     {
         // Line 3 = "    <PackageReference Include="Serilog" Version="3.1.0" />" (58 chars)
