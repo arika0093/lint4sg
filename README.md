@@ -41,14 +41,6 @@ dotnet add package lint4sg
 | [LSG013](#lsg013) | Avoid Reflection API in source generator | Defeats compile-time code generation benefits |
 | [LSG014](#lsg014) | CodeAnalysis.CSharp version may be too new | Lower versions support more environments |
 
-### Info — Performance category
-
-| ID | Title | Description |
-|----|-------|-------------|
-| [LSG101](#lsg101) | Consider `in` modifier for struct parameter | Avoids struct copies on method calls |
-| [LSG102](#lsg102) | Consider interpolated string | `string.Format` → `$"..."` |
-| [LSG103](#lsg103) | Use StringBuilder in loops | Avoids repeated string allocations |
-
 ---
 
 ## Rule Details
@@ -68,6 +60,8 @@ public class MyGenerator : ISourceGenerator { ... }
 [Generator]
 public class MyGenerator : IIncrementalGenerator { ... }
 ```
+
+Source: [Incremental Generators design document](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.md)
 
 ---
 
@@ -89,6 +83,8 @@ var result = context.SyntaxProvider.ForAttributeWithMetadataName(
     predicate: (node, ct) => node is ClassDeclarationSyntax,
     transform: (ctx, ct) => (ClassDeclarationSyntax)ctx.Node);
 ```
+
+Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md), [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
 
 ---
 
@@ -114,6 +110,8 @@ var result = context.SyntaxProvider.CreateSyntaxProvider(
     });
 ```
 
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
+
 ---
 
 ### LSG004
@@ -135,6 +133,8 @@ void Transform(GeneratorSyntaxContext ctx, CancellationToken ct)
     DoWork(ct);
 }
 ```
+
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
 
 ---
 
@@ -165,6 +165,8 @@ void Process(IEnumerable<ISymbol> symbols, CancellationToken ct)
 }
 ```
 
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
+
 ---
 
 ### LSG006
@@ -185,6 +187,8 @@ public record MyInfo(string Name, string FullName);
 context.RegisterSourceOutput(provider, (spc, info) => Generate(spc, info));
 ```
 
+Source: [Incremental Generators design document](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.md), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
+
 ---
 
 ### LSG007
@@ -201,6 +205,8 @@ context.RegisterSourceOutput(arrayProvider, (spc, arr) => Generate(spc, arr));
 context.RegisterSourceOutput(equatableArrayProvider, (spc, arr) => Generate(spc, arr));
 ```
 
+Source: [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
+
 ---
 
 ### LSG008
@@ -208,6 +214,8 @@ context.RegisterSourceOutput(equatableArrayProvider, (spc, arr) => Generate(spc,
 **Non-deterministic SyntaxProvider return value** *(warning)*
 
 The same equatability requirements from LSG006/LSG007 apply to the values returned by `ForAttributeWithMetadataName` and `CreateSyntaxProvider` transforms. If the transform returns a non-equatable type, Roslyn's caching will not work. This is a warning rather than an error because some unavoidable patterns exist.
+
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
 
 ---
 
@@ -227,6 +235,8 @@ writer.Indent++;
 writer.WriteLine("public class Foo { }");
 ```
 
+Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
+
 ---
 
 ### LSG010
@@ -242,6 +252,8 @@ sb.AppendLine("        public void Method()");
 // ✅ OK — use IndentedStringBuilder or IndentedTextWriter
 sb.AppendLine("public void Method()");
 ```
+
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
 
 ---
 
@@ -266,6 +278,8 @@ sb.Append($$"""
     """);
 ```
 
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
+
 ---
 
 ### LSG012
@@ -273,6 +287,8 @@ sb.Append($$"""
 **External dependency in source generator** *(warning)*
 
 Source generators distributed as NuGet packages require all their transitive dependencies to be bundled (using `PrivateAssets="all"` or similar). This complicates packaging. Prefer inlining small utilities or avoiding external dependencies altogether.
+
+Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
 
 ---
 
@@ -282,6 +298,8 @@ Source generators distributed as NuGet packages require all their transitive dep
 
 Using `System.Reflection` in a source generator (or generating code that uses reflection) defeats the purpose of compile-time code generation. Source generators should produce static code. When an LLM generates reflection-based code in a generator, this rule fires immediately to draw attention.
 
+Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
+
 ---
 
 ### LSG014
@@ -290,67 +308,16 @@ Using `System.Reflection` in a source generator (or generating code that uses re
 
 A source generator that references a newer version of `Microsoft.CodeAnalysis.CSharp` will only run in IDEs and build tools that ship that version. Using a lower version (< 5.0.0 as of March 2026) maximises compatibility with older Visual Studio / Rider installations and CI agents.
 
----
-
-### LSG101
-
-**Consider `in` modifier for large struct parameters** *(info)*
-
-Passing large structs by value causes a copy on every call. Adding the `in` modifier passes by reference without allowing mutation.
-
-```csharp
-// Before
-public void Process(LargeStruct data) { ... }
-
-// After
-public void Process(in LargeStruct data) { ... }
-```
-
----
-
-### LSG102
-
-**Consider interpolated string instead of string.Format** *(info)*
-
-Interpolated strings can use custom `InterpolatedStringHandler` implementations for zero-allocation formatting.
-
-```csharp
-// Before
-var msg = string.Format("Hello, {0}!", name);
-
-// After
-var msg = $"Hello, {name}!";
-```
-
----
-
-### LSG103
-
-**Use StringBuilder for string concatenation in loops** *(info)*
-
-`string` is immutable; each `+` operation allocates a new string. Inside a loop, this creates many short-lived allocations.
-
-```csharp
-// Before
-var result = "";
-foreach (var item in items)
-    result += item;
-
-// After
-var sb = new StringBuilder();
-foreach (var item in items)
-    sb.Append(item);
-var result = sb.ToString();
-```
+Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
 
 ---
 
 ## References
 
 - [Roslyn Incremental Generators design document](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.md)
+- [Roslyn Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
 - [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
 - [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
-- [C# Advanced Performance topics](https://learn.microsoft.com/en-us/dotnet/csharp/advanced-topics/performance/)
 
 ## License
 
