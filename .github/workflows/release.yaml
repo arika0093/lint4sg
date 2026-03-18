@@ -45,6 +45,10 @@ jobs:
         shell: bash
         run: |
           package_path=$(find ./artifacts -maxdepth 1 -name 'lint4sg.*.nupkg' | head -n 1)
+          if [ -z "$package_path" ]; then
+            echo "No package was generated in ./artifacts" >&2
+            exit 1
+          fi
           package_name=$(basename "$package_path" .nupkg)
           echo "version=${package_name#lint4sg.}" >> "$GITHUB_OUTPUT"
 
