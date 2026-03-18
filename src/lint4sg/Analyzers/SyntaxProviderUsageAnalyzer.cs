@@ -27,7 +27,10 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
     );
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        ImmutableArray.Create(DiagnosticDescriptors.LSG002, DiagnosticDescriptors.LSG003);
+        ImmutableArray.Create(
+            DiagnosticDescriptors.LSG002,
+            DiagnosticDescriptors.LSG003,
+            DiagnosticDescriptors.LSG016);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -46,9 +49,9 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
 
         var methodName = memberAccess.Name.Identifier.Text;
 
-        // We want to detect SyntaxProvider.CreateSyntaxProvider(...) calls
-        // FAWMN is ForAttributeWithMetadataName - not flagged for LSG002
-        if (methodName != "CreateSyntaxProvider")
+        var isCreateSyntaxProvider = methodName == "CreateSyntaxProvider";
+        var isForAttributeWithMetadataName = methodName == "ForAttributeWithMetadataName";
+        if (!isCreateSyntaxProvider && !isForAttributeWithMetadataName)
             return;
 
         // Verify this is on a SyntaxValueProvider via semantic model
@@ -79,21 +82,33 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
                 return;
         }
 
-        // LSG002: Warn about using CreateSyntaxProvider
-        context.ReportDiagnostic(Diagnostic.Create(
-            DiagnosticDescriptors.LSG002,
-            invocation.GetLocation()));
-
-        // LSG003: Check for expensive inheritance/interface/attribute scans.
-        // In the predicate these checks are always expensive because the predicate
-        // runs on every syntax change. In the transform they are still not allowed
-        // when CreateSyntaxProvider is being used to scan broadly via GetDeclaredSymbol
-        // instead of pre-filtering (typically with ForAttributeWithMetadataName).
-        var arguments = invocation.ArgumentList.Arguments;
-        if (arguments.Count >= 1)
+        if (isCreateSyntaxProvider)
         {
-            var predicateArg = arguments[0];
-            if (ContainsExpensivePredicateCheck(predicateArg))
+            // LSG002: Warn about using CreateSyntaxProvider
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.LSG002,
+                invocation.GetLocation()));
+        }
+
+        var arguments = invocation.ArgumentList.Arguments;
+        var predicateArgumentIndex = isCreateSyntaxProvider ? 0 : 1;
+        if (arguments.Count > predicateArgumentIndex)
+        {
+            var predicateArg = arguments[predicateArgumentIndex];
+
+            foreach (var allocationNode in GetAllocationNodes(predicateArg))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.LSG016,
+                    allocationNode.GetLocation()));
+            }
+
+            // LSG003: Check for expensive inheritance/interface/attribute scans.
+            // In the predicate these checks are always expensive because the predicate
+            // runs on every syntax change. In the transform they are still not allowed
+            // when CreateSyntaxProvider is being used to scan broadly via GetDeclaredSymbol
+            // instead of pre-filtering (typically with ForAttributeWithMetadataName).
+            if (isCreateSyntaxProvider && ContainsExpensivePredicateCheck(predicateArg))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.LSG003,
@@ -101,7 +116,7 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
             }
         }
 
-        if (arguments.Count >= 2)
+        if (isCreateSyntaxProvider && arguments.Count >= 2)
         {
             var transformArg = arguments[1];
             if (ContainsExpensiveTransformScan(arguments[0], transformArg))
@@ -222,5 +237,39 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         }
 
         return null;
+    }
+
+    private static IEnumerable<SyntaxNode> GetAllocationNodes(SyntaxNode node)
+    {
+        foreach (var descendant in node.DescendantNodesAndSelf())
+        {
+            switch (descendant)
+            {
+                case ObjectCreationExpressionSyntax:
+                case ImplicitObjectCreationExpressionSyntax:
+                case ArrayCreationExpressionSyntax:
+                case ImplicitArrayCreationExpressionSyntax:
+                case AnonymousObjectCreationExpressionSyntax:
+                case CollectionExpressionSyntax:
+                case InterpolatedStringExpressionSyntax:
+                    yield return descendant;
+                    break;
+                case InvocationExpressionSyntax invocation when IsKnownAllocatingInvocation(invocation):
+                    yield return invocation;
+                    break;
+            }
+        }
+    }
+
+    private static bool IsKnownAllocatingInvocation(InvocationExpressionSyntax invocation)
+    {
+        var name = invocation.Expression switch
+        {
+            MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text,
+            IdentifierNameSyntax identifier => identifier.Identifier.Text,
+            _ => null
+        };
+
+        return name is "ToArray" or "ToList" or "ToDictionary" or "ToHashSet";
     }
 }

@@ -163,6 +163,15 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         var typeName = type.Name;
         var fullTypeName = type.ToDisplayString();
 
+        // Primitive/runtime special types are deterministic by themselves, so we can stop here.
+        // Strings are handled later because they are the common reference-type exception.
+        if (type.SpecialType != SpecialType.None &&
+            type.SpecialType != SpecialType.System_String &&
+            type.TypeKind != TypeKind.Struct)
+        {
+            return;
+        }
+
         // Arrays -> LSG007 / LSG008
         if (type is IArrayTypeSymbol)
         {
@@ -202,11 +211,13 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // User-defined mutable class (not record/struct) -> LSG006 / LSG008
-        if (IsUserDefinedMutableClass(checkType))
+        var hasValueEquality = HasValueEquality(checkType);
+
+        // Collection-like types that are not known to have stable value semantics -> LSG007 / LSG008
+        if (IsCollectionLike(checkType) && !hasValueEquality)
         {
             ReportDiagnostic(context, location, isRegisterMethod,
-                DiagnosticDescriptors.LSG006, DiagnosticDescriptors.LSG008, fullTypeName);
+                DiagnosticDescriptors.LSG007, DiagnosticDescriptors.LSG008, fullTypeName);
             return;
         }
 
@@ -231,8 +242,15 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
                 CheckTypeForNonDeterminism(context, typeArg, location, isRegisterMethod, updatedVisited);
         }
 
-        // Records and structs: recursively check all property/field types
-        if (checkType.IsRecord || checkType.TypeKind == TypeKind.Struct)
+        if (checkType.IsReferenceType && !hasValueEquality)
+        {
+            ReportDiagnostic(context, location, isRegisterMethod,
+                DiagnosticDescriptors.LSG006, DiagnosticDescriptors.LSG008, fullTypeName);
+            return;
+        }
+
+        // Records, structs, and custom value-equality classes: recursively check all property/field types
+        if (checkType.IsRecord || checkType.TypeKind == TypeKind.Struct || hasValueEquality)
         {
             foreach (var member in checkType.GetMembers())
             {
@@ -286,18 +304,57 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    private static bool IsUserDefinedMutableClass(INamedTypeSymbol type)
+    private static bool IsCollectionLike(INamedTypeSymbol type)
     {
+        if (type.SpecialType == SpecialType.System_String)
+            return false;
+
+        if (type.Name == "ImmutableArray" &&
+            type.ContainingNamespace?.ToString() == "System.Collections.Immutable")
+        {
+            return true;
+        }
+
+        return type.AllInterfaces.Any(i =>
+            i.Name is "IEnumerable" or "ICollection" or "IList" or "IReadOnlyCollection" or "IReadOnlyList" &&
+            i.ContainingNamespace != null &&
+            i.ContainingNamespace.ToDisplayString().StartsWith("System.Collections", StringComparison.Ordinal));
+    }
+
+    private static bool HasValueEquality(INamedTypeSymbol type)
+    {
+        if (type.SpecialType == SpecialType.System_String)
+            return true;
+
+        if (type.IsTupleType || type.IsRecord || type.TypeKind is TypeKind.Struct or TypeKind.Enum)
+            return true;
+
         if (type.TypeKind != TypeKind.Class)
             return false;
-        if (type.IsRecord)
-            return false;
-        var ns = type.ContainingNamespace?.ToString();
-        if (ns != null && (ns.StartsWith("System", StringComparison.Ordinal) ||
-                           ns.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal)))
-            return false;
-        if (type.IsAnonymousType)
-            return false;
-        return true;
+
+        return OverridesObjectEquals(type) || ImplementsIEquatableOfSelf(type);
     }
+
+    private static bool OverridesObjectEquals(INamedTypeSymbol type)
+    {
+        return type.GetMembers("Equals")
+            .OfType<IMethodSymbol>()
+            .Any(m =>
+                m is
+                {
+                    IsOverride: true,
+                    Parameters.Length: 1
+                } &&
+                m.Parameters[0].Type.SpecialType == SpecialType.System_Object);
+    }
+
+    private static bool ImplementsIEquatableOfSelf(INamedTypeSymbol type)
+    {
+        return type.AllInterfaces.Any(i =>
+            i.Name == "IEquatable" &&
+            i.ContainingNamespace?.ToString() == "System" &&
+            i is { TypeArguments.Length: 1 } &&
+            SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], type));
+    }
+
 }

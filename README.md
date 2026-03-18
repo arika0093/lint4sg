@@ -30,6 +30,8 @@ dotnet add package lint4sg
 | [LSG009](#lsg009) | Avoid NormalizeWhitespace | O(n) syntax-tree traversal — use a writer instead |
 | [LSG010](#lsg010) | Excessive whitespace in AppendLine | Use indentation-aware StringBuilder |
 | [LSG011](#lsg011) | Use raw string literal | Replace 3+ consecutive AppendLine calls |
+| [LSG015](#lsg015) | Avoid fully-indented raw string output | Raw string output should not prepend indentation on every line |
+| [LSG016](#lsg016) | Avoid allocations in syntax provider predicate | Predicates run hot and must stay allocation-free |
 
 ### Warnings — SourceGenerator category
 
@@ -128,19 +130,28 @@ Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/
 
 **Forward CancellationToken to all accepting callees**
 
-Incremental generators receive a `CancellationToken` that should be forwarded everywhere. If a called method accepts a `CancellationToken` parameter, pass the token so that cancellation is propagated correctly.
+Incremental generators receive a `CancellationToken` that should be propagated through the whole internal call chain.
+
+- If a callee already accepts `CancellationToken`, forward it.
+- If the callee is your own method (same project / source-visible helper) and it does **not** accept `CancellationToken`, add the parameter there as well and keep forwarding it to deeper calls.
+- Very small leaf helpers are tolerated when their internal processing is under 5 lines and they do not continue into other project methods.
 
 ```csharp
 // ❌ LSG004
 void Transform(GeneratorSyntaxContext ctx, CancellationToken ct)
 {
-    DoWork(); // DoWork(CancellationToken) overload exists!
+    Parse(); // your own non-trivial helper does not accept CancellationToken
 }
 
 // ✅ OK
 void Transform(GeneratorSyntaxContext ctx, CancellationToken ct)
 {
-    DoWork(ct);
+    Parse(ct);
+}
+
+void Parse(CancellationToken ct)
+{
+    Analyze(ct);
 }
 ```
 
@@ -183,9 +194,9 @@ Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/
 
 **Non-deterministic value in RegisterSourceOutput**
 
-`RegisterSourceOutput` caches results based on value equality of the input. Types like `ISymbol`, `SyntaxNode`, `SemanticModel`, `Compilation`, and plain mutable classes use reference equality, so the cache will never hit and the generator will re-run on every compilation. This also applies to **nested** members — if a record contains an `ISymbol` field, the whole record is non-deterministic.
+`RegisterSourceOutput` caches results based on value equality of the input. Types like `ISymbol`, `SyntaxNode`, `SemanticModel`, `Compilation`, and ordinary reference types without value equality defeat that cache and force unnecessary re-execution. This also applies to **nested** members — if a record or custom equatable class contains an `ISymbol` field, the whole value is still non-deterministic.
 
-Use records, structs, or primitives whose members are all equatable.
+Use records, structs, primitives, or carefully-designed value-equality classes whose members are themselves deterministic.
 
 ```csharp
 // ❌ LSG006 — ISymbol inside record defeats caching
@@ -253,7 +264,7 @@ Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/
 
 **Excessive whitespace in AppendLine**
 
-Manually indenting code with 8 or more consecutive spaces (or 2+ tabs) in `AppendLine` is fragile and hard to maintain. Use an indentation-aware `StringBuilder` utility.
+Manually indenting code with 8 or more consecutive spaces (or 2+ tabs) in `AppendLine` is fragile and hard to maintain. Use an indentation-aware `StringBuilder` utility. Raw string literals are ignored by this rule because they are usually the preferred replacement.
 
 ```csharp
 // ❌ LSG010
@@ -298,7 +309,53 @@ Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/
 
 Source generators distributed as NuGet packages require all their transitive dependencies to be bundled (using `PrivateAssets="all"` or similar). This complicates packaging. Prefer inlining small utilities or avoiding external dependencies altogether.
 
+References that are intentionally source-only / analyzer-only and are marked with `PrivateAssets="all"` are allowed.
+
 Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
+
+---
+
+### LSG015
+
+**Avoid fully-indented raw string output**
+
+Raw string literals are excellent for generator output, but if **every emitted line** starts with indentation whitespace then the generated text becomes harder to control and maintain. Keep the *source code* indented by aligning the closing delimiter, but avoid baking shared leading whitespace into every output line.
+
+```csharp
+// ❌ LSG015
+sb.Append("""
+        public class Foo
+        {
+        }
+    """);
+
+// ✅ OK
+sb.Append("""
+public class Foo
+{
+}
+""");
+```
+
+---
+
+### LSG016
+
+**Avoid allocations in syntax provider predicate**
+
+`CreateSyntaxProvider` and `ForAttributeWithMetadataName` predicates run extremely often, so even small allocations add up. Keep predicates allocation-free and move allocations to the transform step or outside the pipeline hot path.
+
+```csharp
+// ❌ LSG016
+var result = context.SyntaxProvider.CreateSyntaxProvider(
+    predicate: (node, ct) => new[] { node }.Length > 0,
+    transform: (ctx, ct) => ctx);
+
+// ✅ OK
+var result = context.SyntaxProvider.CreateSyntaxProvider(
+    predicate: (node, ct) => node is ClassDeclarationSyntax,
+    transform: (ctx, ct) => new[] { ctx });
+```
 
 ---
 

@@ -25,7 +25,8 @@ public class LSG004_LSG005_CancellationTokenTests
             """;
 
         var expected = new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(7, 9, 7, 17);
+            .WithSpan(7, 9, 7, 17)
+            .WithArguments("DoWork");
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
@@ -45,6 +46,136 @@ public class LSG004_LSG005_CancellationTokenTests
                 }
 
                 private void DoWork(CancellationToken ct = default) { }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task RecursiveOwnCallChainWithoutCancellationToken_ReportsEveryMethodInChain()
+    {
+        var code = """
+            using System.Threading;
+
+            public class Generator
+            {
+                public void Transform(CancellationToken cancellationToken)
+                {
+                    A();
+                }
+
+                private void A()
+                {
+                    var a = 0;
+                    a++;
+                    a++;
+                    B();
+                }
+
+                private void B()
+                {
+                    var b = 0;
+                    b++;
+                    b++;
+                    C();
+                }
+
+                private void C()
+                {
+                    var c = 0;
+                    c++;
+                    c++;
+                    c++;
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code,
+            new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+                .WithSpan(10, 18, 10, 19)
+                .WithArguments("A"),
+            new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+                .WithSpan(18, 18, 18, 19)
+                .WithArguments("B"),
+            new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+                .WithSpan(26, 18, 26, 19)
+                .WithArguments("C"));
+
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task ShortLeafHelperWithoutCancellationToken_IsAllowed()
+    {
+        var code = """
+            using System.Threading;
+
+            public class Generator
+            {
+                public void Transform(CancellationToken cancellationToken)
+                {
+                    Log();
+                }
+
+                private void Log() => System.Console.WriteLine("trace");
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task OverrideMethodWithoutCancellationToken_IsAllowed()
+    {
+        var code = """
+            using System.Threading;
+
+            public abstract class BaseGenerator
+            {
+                protected abstract void ExecuteCore();
+            }
+
+            public sealed class Generator : BaseGenerator
+            {
+                public void Transform(CancellationToken cancellationToken)
+                {
+                    ExecuteCore();
+                }
+
+                protected override void ExecuteCore()
+                {
+                    System.Console.WriteLine("work");
+                    System.Console.WriteLine("more");
+                    System.Console.WriteLine("still work");
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task ExplicitInterfaceImplementationWithoutCancellationToken_IsAllowed()
+    {
+        var code = """
+            using System.Collections;
+            using System.Threading;
+
+            public sealed class Generator : IEnumerable
+            {
+                public void Transform(CancellationToken cancellationToken)
+                {
+                    ((IEnumerable)this).GetEnumerator();
+                }
+
+                IEnumerator IEnumerable.GetEnumerator()
+                {
+                    yield break;
+                }
             }
             """;
 

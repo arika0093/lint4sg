@@ -40,11 +40,11 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor LSG004 = new(
         id: "LSG004",
         title: "Forward CancellationToken",
-        messageFormat: "CancellationToken must be forwarded to all methods that accept it",
+        messageFormat: "Propagate CancellationToken for '{0}'. Forward the available token to this call, or add a CancellationToken parameter to your own method and keep forwarding it to nested calls (leaf helpers under 5 lines are allowed).",
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "When a CancellationToken is available, it must be forwarded to all invoked methods that accept a CancellationToken parameter to support proper cancellation.");
+        description: "When a CancellationToken is available, it must be propagated through the full call chain. Forward it to callees that already accept it, and add a CancellationToken parameter to your own non-trivial helper methods so they can continue propagating cancellation.");
 
     // LSG005: Missing ThrowIfCancellationRequested in loop
     public static readonly DiagnosticDescriptor LSG005 = new(
@@ -145,5 +145,25 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "Using a newer version of Microsoft.CodeAnalysis.CSharp limits the environments where the generator can run. Consider targeting a lower version for maximum compatibility.");
+
+    // LSG015: Fully-indented raw string literal
+    public static readonly DiagnosticDescriptor LSG015 = new(
+        id: "LSG015",
+        title: "Avoid fully-indented raw string literal output",
+        messageFormat: "This raw string literal emits indentation on every line. Remove the shared leading whitespace from the string contents, and let the raw-string closing delimiter control source indentation instead.",
+        category: SourceGeneratorCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Raw string literals are good for multi-line generation, but if every emitted line starts with indentation then the generated output becomes fragile. Keep the source indented via the closing delimiter and avoid baking shared leading whitespace into the output itself.");
+
+    // LSG016: Allocation inside syntax provider predicate
+    public static readonly DiagnosticDescriptor LSG016 = new(
+        id: "LSG016",
+        title: "Avoid allocations in syntax provider predicate",
+        messageFormat: "Do not allocate inside SyntaxProvider predicates. Move allocations out of the predicate or into a later transform step.",
+        category: SourceGeneratorCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "CreateSyntaxProvider and ForAttributeWithMetadataName predicates run extremely often. Allocations inside predicates add avoidable overhead and should be moved out of the predicate or deferred to later pipeline stages.");
 
 }

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -24,7 +25,10 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
     private static readonly Regex ExcessiveTabsPattern = new(@"\t{2,}", RegexOptions.Compiled);
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        ImmutableArray.Create(DiagnosticDescriptors.LSG010, DiagnosticDescriptors.LSG011);
+        ImmutableArray.Create(
+            DiagnosticDescriptors.LSG010,
+            DiagnosticDescriptors.LSG011,
+            DiagnosticDescriptors.LSG015);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -52,14 +56,21 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
         var arg = args[0].Expression;
 
-        // Skip raw string literals ("""...""")
-        if (IsRawStringLiteral(arg))
-            return;
-
         // Get the string value
         var stringValue = GetStringValue(arg);
         if (stringValue == null)
             return;
+
+        if (IsRawStringLiteral(arg))
+        {
+            if (IsFullyIndentedRawString(stringValue))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.LSG015,
+                    invocation.GetLocation()));
+            }
+            return;
+        }
 
         if (ExcessiveSpacesPattern.IsMatch(stringValue) || ExcessiveTabsPattern.IsMatch(stringValue))
         {
@@ -195,5 +206,17 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         }
 
         return null;
+    }
+
+    private static bool IsFullyIndentedRawString(string value)
+    {
+        var lines = value
+            .Split('\n')
+            .Select(static line => line.TrimEnd('\r'))
+            .Where(static line => !string.IsNullOrWhiteSpace(line))
+            .ToArray();
+
+        return lines.Length > 1 &&
+               lines.All(static line => char.IsWhiteSpace(line[0]));
     }
 }

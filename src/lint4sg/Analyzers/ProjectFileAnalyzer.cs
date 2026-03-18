@@ -80,6 +80,8 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
             //   <PackageReference Include="Foo"><Version>1.0</Version></PackageReference>
             var packageVersion = (string?)element.Attribute("Version")
                                  ?? element.Element("Version")?.Value;
+            var privateAssets = (string?)element.Attribute("PrivateAssets")
+                                ?? element.Element("PrivateAssets")?.Value;
 
             // Map the element's start line back to a SourceText span for diagnostics.
             var lineInfo = element as IXmlLineInfo;
@@ -110,7 +112,7 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
                 }
             }
 
-            if (!isAllowed)
+            if (!isAllowed && !ContainsAllPrivateAssets(privateAssets))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.LSG012,
@@ -119,6 +121,17 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
             }
         }
     }
+
+    private static bool ContainsAllPrivateAssets(string? privateAssets)
+    {
+        if (string.IsNullOrWhiteSpace(privateAssets))
+            return false;
+
+        return privateAssets
+            .Split(new[] { ';', ',', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Any(static token => string.Equals(token, "all", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool TryParseVersion(string versionString, out Version version)
     {
         // Handle version strings with prefixes like "4.x.x" or "~4.x.x"
