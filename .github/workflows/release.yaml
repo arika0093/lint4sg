@@ -70,7 +70,7 @@ jobs:
           target_commitish: ${{ github.ref }}
           generate_release_notes: true
           files: ./artifacts/*.nupkg
-          # if hyphen contains in the tag name, it will be prerelease
+          # if the tag name contains a hyphen, it will be treated as a prerelease
           prerelease: ${{ contains(needs.package-build.outputs.version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
