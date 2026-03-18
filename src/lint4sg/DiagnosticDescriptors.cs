@@ -5,7 +5,6 @@ namespace lint4sg;
 internal static class DiagnosticDescriptors
 {
     private const string SourceGeneratorCategory = "SourceGenerator";
-    private const string PerformanceCategory = "Performance";
 
     // LSG001: ISourceGenerator usage
     public static readonly DiagnosticDescriptor LSG001 = new(
@@ -147,33 +146,4 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "Using a newer version of Microsoft.CodeAnalysis.CSharp limits the environments where the generator can run. Consider targeting a lower version for maximum compatibility.");
 
-    // LSG101: Consider 'in' modifier for struct parameter
-    public static readonly DiagnosticDescriptor LSG101 = new(
-        id: "LSG101",
-        title: "Consider 'in' modifier for struct parameter",
-        messageFormat: "Consider using 'in' modifier for struct parameter '{0}' to avoid copying",
-        category: PerformanceCategory,
-        defaultSeverity: DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: "Adding the 'in' modifier to struct parameters avoids copying the value when passing to the method, improving performance for large structs.");
-
-    // LSG102: Consider interpolated string instead of string.Format
-    public static readonly DiagnosticDescriptor LSG102 = new(
-        id: "LSG102",
-        title: "Consider interpolated string instead of string.Format",
-        messageFormat: "Consider using an interpolated string instead of string.Format() for better readability and potential performance improvements",
-        category: PerformanceCategory,
-        defaultSeverity: DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: "Interpolated strings can use custom interpolated string handlers for better performance.");
-
-    // LSG103: Use StringBuilder for string concatenation in loops
-    public static readonly DiagnosticDescriptor LSG103 = new(
-        id: "LSG103",
-        title: "Use StringBuilder for string concatenation in loops",
-        messageFormat: "Consider using StringBuilder instead of string concatenation (+) inside loops for better performance",
-        category: PerformanceCategory,
-        defaultSeverity: DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: "String concatenation with + inside loops creates many temporary string objects. Use StringBuilder for better performance.");
 }

@@ -28,21 +28,29 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Get version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Restore dependencies
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --no-restore -c Release -p:Version=${{ steps.version.outputs.version }}
+        run: dotnet build --no-restore -c Release
 
       - name: Run tests
         run: dotnet test --no-build -c Release --verbosity normal
 
       - name: Generate NuGet Package
-        run: dotnet pack --no-build -c Release -p:Version=${{ steps.version.outputs.version }} --output ./artifacts
+        run: dotnet pack --no-build -c Release --output ./artifacts
+
+      - name: Get version from package
+        id: version
+        shell: bash
+        run: |
+          package_path=$(find ./artifacts -maxdepth 1 -name 'lint4sg.*.nupkg' | head -n 1)
+          if [ -z "$package_path" ]; then
+            echo "No package was generated in ./artifacts" >&2
+            exit 1
+          fi
+          package_name=$(basename "$package_path" .nupkg)
+          echo "version=${package_name#lint4sg.}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
