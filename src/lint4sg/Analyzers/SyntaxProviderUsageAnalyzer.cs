@@ -170,7 +170,7 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         {
             return lambda.Body switch
             {
-                BlockSyntax block => TryGetSingleReturnExpression(block, out var expression) && IsBroadPredicateExpression(expression),
+                BlockSyntax block => TryGetSingleReturnExpression(block) is { } expression && IsBroadPredicateExpression(expression),
                 ExpressionSyntax expression => IsBroadPredicateExpression(expression),
                 _ => false
             };
@@ -214,15 +214,13 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         }
     }
 
-    private static bool TryGetSingleReturnExpression(BlockSyntax block, out ExpressionSyntax expression)
+    private static ExpressionSyntax? TryGetSingleReturnExpression(BlockSyntax block)
     {
         if (block.Statements.Count == 1 && block.Statements[0] is ReturnStatementSyntax { Expression: { } returnExpression })
         {
-            expression = returnExpression;
-            return true;
+            return returnExpression;
         }
 
-        expression = null!;
-        return false;
+        return null;
     }
 }
