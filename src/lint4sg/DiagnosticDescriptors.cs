@@ -26,15 +26,15 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "ForAttributeWithMetadataName (FAWMN) is optimized to filter nodes efficiently. Use CreateSyntaxProvider only when FAWMN is not applicable.");
 
-    // LSG003: High-cost SyntaxProvider predicate
+    // LSG003: High-cost CreateSyntaxProvider inheritance scan
     public static readonly DiagnosticDescriptor LSG003 = new(
         id: "LSG003",
-        title: "Avoid high-cost SyntaxProvider predicate",
-        messageFormat: "Checking interface/base-class/attribute inheritance inside SyntaxProvider predicate is expensive. Consider using ForAttributeWithMetadataName combined with semantic checks in the transform step.",
+        title: "Avoid broad inheritance scans in CreateSyntaxProvider",
+        messageFormat: "Checking interface/base-class/attribute inheritance in CreateSyntaxProvider is expensive. Pre-filter first (typically with ForAttributeWithMetadataName) instead of using GetDeclaredSymbol-based scans.",
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Interface/base-class/attribute inheritance checks inside SyntaxProvider predicates are expensive because they run on every syntax change. Use ForAttributeWithMetadataName to pre-filter and perform semantic checks in the transform step only.");
+        description: "Interface/base-class/attribute inheritance checks in CreateSyntaxProvider are expensive. Predicate checks always run on every syntax change, and transform checks that rely on GetDeclaredSymbol still represent a broad scan unless the pipeline was pre-filtered first. Use ForAttributeWithMetadataName or another narrow pre-filter before performing semantic checks.");
 
     // LSG004: CancellationToken not forwarded
     public static readonly DiagnosticDescriptor LSG004 = new(

@@ -69,7 +69,13 @@ internal static class TestHelpers
 
             public interface ISymbol { }
             public interface INamedTypeSymbol : ISymbol { }
-            public abstract class SemanticModel { }
+            public abstract class SemanticModel
+            {
+                public virtual ISymbol GetDeclaredSymbol(
+                    object node,
+                    System.Threading.CancellationToken cancellationToken = default)
+                    => null!;
+            }
             public abstract class Compilation { }
         }
         """;
