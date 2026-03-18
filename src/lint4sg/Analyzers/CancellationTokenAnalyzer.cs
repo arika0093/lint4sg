@@ -136,6 +136,9 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
             if (!TryGetOwnMethodBody(methodSymbol, out var calleeBody, out var calleeLocation))
                 continue;
 
+            if (IsContractBoundMethod(methodSymbol))
+                continue;
+
             if (!RequiresCancellationTokenParameter(context.SemanticModel.Compilation, calleeBody))
                 continue;
 
@@ -167,6 +170,9 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
                 continue;
 
             if (!TryGetOwnMethodBody(methodSymbol, out var calleeBody, out var calleeLocation))
+                continue;
+
+            if (IsContractBoundMethod(methodSymbol))
                 continue;
 
             if (!RequiresCancellationTokenParameter(context.SemanticModel.Compilation, calleeBody))
@@ -357,6 +363,12 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
         SyntaxNode body)
     {
         return GetBodyLineCount(body) >= 5 || ContainsOwnMethodInvocation(compilation, body);
+    }
+
+    private static bool IsContractBoundMethod(IMethodSymbol methodSymbol)
+    {
+        return methodSymbol.IsOverride ||
+               methodSymbol.ExplicitInterfaceImplementations.Length > 0;
     }
 
     private static int GetBodyLineCount(SyntaxNode body)

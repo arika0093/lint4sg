@@ -370,6 +370,45 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                 .WithArguments("System.Collections.Generic.List<string>"));
     }
 
+    [Fact]
+    public async Task ValueEqualityCollectionWrapper_NoLSG007()
+    {
+        var code = """
+            using System.Collections;
+            using System.Collections.Generic;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class PathSegments : IReadOnlyList<string>, System.IEquatable<PathSegments>
+            {
+                public int Count => 0;
+                public string this[int index] => "";
+
+                public bool Equals(PathSegments? other) => other is not null;
+                public override bool Equals(object? obj) => obj is PathSegments other && Equals(other);
+                public override int GetHashCode() => 0;
+
+                public IEnumerator<string> GetEnumerator()
+                {
+                    yield break;
+                }
+
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<PathSegments> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, segments) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
     // ── LSG008: SyntaxProvider returns non-deterministic type (warning) ───
 
     [Fact]

@@ -120,6 +120,25 @@ public class LSG010_LSG011_AppendLineTests
     }
 
     [Fact]
+    public async Task SingleLineRawStringLiteral_NoLSG015()
+    {
+        var code = """"
+            using System.Text;
+
+            public class Generator
+            {
+                public void Generate(StringBuilder sb)
+                {
+                    sb.Append("""    public class Foo""");
+                }
+            }
+            """";
+
+        var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
     public async Task ThreeConsecutiveAppendLines_ReportsLSG011()
     {
         var code = """

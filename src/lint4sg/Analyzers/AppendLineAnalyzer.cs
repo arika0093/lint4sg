@@ -216,7 +216,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             .Where(static line => !string.IsNullOrWhiteSpace(line))
             .ToArray();
 
-        return lines.Length > 0 &&
+        return lines.Length > 1 &&
                lines.All(static line => char.IsWhiteSpace(line[0]));
     }
 }

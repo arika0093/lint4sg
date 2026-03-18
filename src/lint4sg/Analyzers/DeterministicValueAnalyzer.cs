@@ -211,8 +211,10 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             return;
         }
 
+        var hasValueEquality = HasValueEquality(checkType);
+
         // Collection-like types that are not known to have stable value semantics -> LSG007 / LSG008
-        if (IsCollectionLike(checkType))
+        if (IsCollectionLike(checkType) && !hasValueEquality)
         {
             ReportDiagnostic(context, location, isRegisterMethod,
                 DiagnosticDescriptors.LSG007, DiagnosticDescriptors.LSG008, fullTypeName);
@@ -239,8 +241,6 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             foreach (var typeArg in checkType.TypeArguments)
                 CheckTypeForNonDeterminism(context, typeArg, location, isRegisterMethod, updatedVisited);
         }
-
-        var hasValueEquality = HasValueEquality(checkType);
 
         if (checkType.IsReferenceType && !hasValueEquality)
         {

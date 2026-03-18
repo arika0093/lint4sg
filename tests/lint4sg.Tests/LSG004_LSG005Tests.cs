@@ -128,6 +128,62 @@ public class LSG004_LSG005_CancellationTokenTests
     }
 
     [Fact]
+    public async Task OverrideMethodWithoutCancellationToken_IsAllowed()
+    {
+        var code = """
+            using System.Threading;
+
+            public abstract class BaseGenerator
+            {
+                protected abstract void ExecuteCore();
+            }
+
+            public sealed class Generator : BaseGenerator
+            {
+                public void Transform(CancellationToken cancellationToken)
+                {
+                    ExecuteCore();
+                }
+
+                protected override void ExecuteCore()
+                {
+                    System.Console.WriteLine("work");
+                    System.Console.WriteLine("more");
+                    System.Console.WriteLine("still work");
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task ExplicitInterfaceImplementationWithoutCancellationToken_IsAllowed()
+    {
+        var code = """
+            using System.Collections;
+            using System.Threading;
+
+            public sealed class Generator : IEnumerable
+            {
+                public void Transform(CancellationToken cancellationToken)
+                {
+                    ((IEnumerable)this).GetEnumerator();
+                }
+
+                IEnumerator IEnumerable.GetEnumerator()
+                {
+                    yield break;
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
     public async Task MethodWithForLoopAndNoThrowIfCancelled_ReportsLSG005()
     {
         var code = """
