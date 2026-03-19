@@ -17,31 +17,24 @@ dotnet add package lint4sg
 
 ## Analyzer Rules
 
-### Errors — SourceGenerator category
-
-| ID | Title | Description |
-|----|-------|-------------|
-| [LSG001](#lsg001) | Avoid ISourceGenerator | Use `IIncrementalGenerator` instead |
-| [LSG003](#lsg003) | Avoid high-cost SyntaxProvider predicate | Inheritance checks in predicates are expensive |
-| [LSG004](#lsg004) | Forward CancellationToken | CT must be forwarded to all accepting callees |
-| [LSG005](#lsg005) | Missing ThrowIfCancellationRequested in loop | Loops must check CT on each iteration |
-| [LSG006](#lsg006) | Non-deterministic value in RegisterSourceOutput | Non-equatable types defeat Roslyn caching |
-| [LSG007](#lsg007) | Non-deterministic collection in RegisterSourceOutput | Arrays/lists use reference equality |
-| [LSG009](#lsg009) | Avoid NormalizeWhitespace | O(n) syntax-tree traversal — use a writer instead |
-| [LSG010](#lsg010) | Excessive whitespace in AppendLine | Use indentation-aware StringBuilder |
-| [LSG011](#lsg011) | Use raw string literal | Replace 3+ consecutive AppendLine calls |
-| [LSG015](#lsg015) | Avoid fully-indented raw string output | Raw string output should not prepend indentation on every line |
-| [LSG016](#lsg016) | Avoid allocations in syntax provider predicate | Predicates run hot and must stay allocation-free |
-
-### Warnings — SourceGenerator category
-
-| ID | Title | Description |
-|----|-------|-------------|
-| [LSG002](#lsg002) | Prefer ForAttributeWithMetadataName | `FAWMN` is heavily optimised over `CreateSyntaxProvider` |
-| [LSG008](#lsg008) | Non-deterministic SyntaxProvider return value | May cause unnecessary pipeline re-execution |
-| [LSG012](#lsg012) | External dependency in source generator | Complicates NuGet packaging |
-| [LSG013](#lsg013) | Avoid Reflection API in source generator | Defeats compile-time code generation benefits |
-| [LSG014](#lsg014) | CodeAnalysis.CSharp version may be too new | Lower versions support more environments |
+| ID | Severity | Title | Description |
+|----|----------|-------|-------------|
+| [LSG001](#lsg001) | Error | Avoid ISourceGenerator | Use `IIncrementalGenerator` instead |
+| [LSG002](#lsg002) | Warning | Prefer ForAttributeWithMetadataName | `FAWMN` is heavily optimised over `CreateSyntaxProvider` |
+| [LSG003](#lsg003) | Error | Avoid high-cost SyntaxProvider predicate | Inheritance checks in predicates are expensive |
+| [LSG004](#lsg004) | Error | Forward CancellationToken | CT must be forwarded to all accepting callees |
+| [LSG005](#lsg005) | Error | Missing ThrowIfCancellationRequested in loop | Loops must check CT on each iteration |
+| [LSG006](#lsg006) | Error | Non-deterministic value in RegisterSourceOutput | Non-equatable types defeat Roslyn caching |
+| [LSG007](#lsg007) | Error | Non-deterministic collection in RegisterSourceOutput | Arrays/lists use reference equality |
+| [LSG008](#lsg008) | Warning | Non-deterministic SyntaxProvider return value | May cause unnecessary pipeline re-execution |
+| [LSG009](#lsg009) | Error | Avoid NormalizeWhitespace | O(n) syntax-tree traversal — use a writer instead |
+| [LSG010](#lsg010) | Error | Excessive whitespace in AppendLine | Use indentation-aware StringBuilder |
+| [LSG011](#lsg011) | Error | Use raw string literal | Replace 3+ consecutive AppendLine calls |
+| [LSG012](#lsg012) | Warning | External dependency in source generator | Complicates NuGet packaging |
+| [LSG013](#lsg013) | Warning | Avoid Reflection API in source generator | Defeats compile-time code generation benefits |
+| [LSG014](#lsg014) | Warning | CodeAnalysis.CSharp version may be too new | Lower versions support more environments |
+| [LSG015](#lsg015) | Error | Avoid fully-indented raw string output | Raw string output should not prepend indentation on every line |
+| [LSG016](#lsg016) | Error | Avoid allocations in syntax provider predicate | Predicates run hot and must stay allocation-free |
 
 ---
 
