@@ -126,13 +126,12 @@ Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/
 When a source-generator callback receives a `CancellationToken`, walk the helper call tree from that callback. If the tree reaches cancellation-aware work — such as loops or external APIs that offer a `CancellationToken` overload — then every project helper in that path should accept `CancellationToken`.
 
 ```csharp
-// ❌ LSG004
 void Transform(GeneratorSyntaxContext ctx, CancellationToken ct)
 {
     Parse();
 }
 
-void Parse()
+void Parse() // ❌ LSG004
 {
     foreach (var item in items)
     {

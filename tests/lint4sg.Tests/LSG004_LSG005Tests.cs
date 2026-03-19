@@ -212,6 +212,114 @@ public class LSG004_LSG005_CancellationTokenTests
     }
 
     [Fact]
+    public async Task HelperWithCancellationTokenCallingProjectOverloadWithoutCt_ReportsLSG005()
+    {
+        var code = """
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
+
+            public class Generator
+            {
+                public void Initialize()
+                {
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
+                }
+
+                private object Parse(CancellationToken ct)
+                {
+                    return Analyze();
+                }
+
+                private object Analyze() => null!;
+                private object Analyze(CancellationToken ct) => null!;
+            }
+            """;
+
+        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .WithSpan(16, 16, 16, 25);
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task HelperWithCancellationTokenReferencedInWrongArgument_ReportsLSG005()
+    {
+        var code = """
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
+
+            public class Generator
+            {
+                public void Initialize()
+                {
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
+                }
+
+                private object Parse(CancellationToken ct)
+                {
+                    return Analyze(ct.ToString(), default);
+                }
+
+                private object Analyze(string text, CancellationToken cancellationToken)
+                {
+                    return ExternalApi.Analyze(cancellationToken);
+                }
+            }
+            """;
+
+        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .WithSpan(16, 16, 16, 47);
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task LoopWithThrowIfCancelledOnlyInsideNestedLambda_ReportsLSG005()
+    {
+        var code = """
+            using System;
+            using System.Collections.Generic;
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
+
+            public class Generator
+            {
+                public void Initialize()
+                {
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
+                }
+
+                private object Parse(CancellationToken ct)
+                {
+                    foreach (var item in new List<int>())
+                    {
+                        Action action = () => ct.ThrowIfCancellationRequested();
+                    }
+
+                    return null!;
+                }
+            }
+            """;
+
+        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .WithSpan(18, 9, 21, 10);
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
+
+    [Fact]
     public async Task NonSourceGeneratorCancellationTokenMethod_DoesNotTriggerCallTreeRule()
     {
         var code = """

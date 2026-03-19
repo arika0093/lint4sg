@@ -163,6 +163,9 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
 
         if (!method.HasCancellationTokenParameter)
         {
+            if (HasCancellationTokenOverload(method.Symbol))
+                return;
+
             if (!IsContractBoundMethod(method.Symbol) && state.ReportedLsg004.Add(method.Symbol))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
@@ -197,7 +200,7 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
 
         var requiresCancellationToken =
             GetDirectLoops(method.Body).Any() ||
-            ContainsExternalCancellationAwareInvocation(method.Body, state.Compilation, state.Methods);
+            ContainsCancellationAwareInvocation(method.Body, state.Compilation);
 
         foreach (var child in GetProjectCallees(method.Body, state.Compilation, state.Methods))
         {
@@ -228,14 +231,25 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
 
             if (state.Methods.TryGetValue(methodSymbol.OriginalDefinition, out var childMethod))
             {
+                var ctParameterIndex = FindCancellationTokenParameter(methodSymbol);
+                if (ctParameterIndex < 0)
+                {
+                    if (HasCancellationTokenOverload(methodSymbol))
+                    {
+                        ReportUsageDiagnostic(context, state, invocation.GetLocation());
+                    }
+
+                    continue;
+                }
+
                 if (!RequiresCancellationToken(state, childMethod))
                     continue;
 
-                var ctParameterIndex = FindCancellationTokenParameter(methodSymbol);
-                if (ctParameterIndex < 0)
-                    continue;
-
-                if (!IsCancellationTokenPassed(invocation, ctParameterIndex, cancellationTokenParameters))
+                if (!IsCancellationTokenPassed(
+                    invocationSemanticModel,
+                    invocation,
+                    methodSymbol,
+                    cancellationTokenParameters))
                 {
                     ReportUsageDiagnostic(context, state, invocation.GetLocation());
                 }
@@ -246,8 +260,11 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
             if (!SupportsCancellationToken(methodSymbol))
                 continue;
 
-            var externalCtParameterIndex = FindCancellationTokenParameter(methodSymbol);
-            if (!IsCancellationTokenPassed(invocation, externalCtParameterIndex, cancellationTokenParameters))
+            if (!IsCancellationTokenPassed(
+                invocationSemanticModel,
+                invocation,
+                methodSymbol,
+                cancellationTokenParameters))
             {
                 ReportUsageDiagnostic(context, state, invocation.GetLocation());
             }
@@ -277,19 +294,15 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
         }
     }
 
-    private static bool ContainsExternalCancellationAwareInvocation(
+    private static bool ContainsCancellationAwareInvocation(
         SyntaxNode body,
-        Compilation compilation,
-        Dictionary<IMethodSymbol, MethodContext> methods)
+        Compilation compilation)
     {
         foreach (var invocation in GetDirectInvocations(body))
         {
             var semanticModel = compilation.GetSemanticModel(invocation.SyntaxTree);
             var methodSymbol = ResolveMethodSymbol(semanticModel, invocation);
             if (methodSymbol == null)
-                continue;
-
-            if (methods.ContainsKey(methodSymbol.OriginalDefinition))
                 continue;
 
             if (SupportsCancellationToken(methodSymbol))
@@ -507,7 +520,7 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
 
     private static bool ContainsThrowIfCancelled(SyntaxNode loopBody, ImmutableList<string> ctParameters)
     {
-        foreach (var invocation in loopBody.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        foreach (var invocation in GetDirectInvocations(loopBody))
         {
             if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
                 continue;
@@ -567,24 +580,33 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
     }
 
     private static bool IsCancellationTokenPassed(
+        SemanticModel semanticModel,
         InvocationExpressionSyntax invocation,
-        int ctParameterIndex,
+        IMethodSymbol methodSymbol,
         ImmutableList<string> ctParameters)
     {
-        foreach (var argument in invocation.ArgumentList.Arguments)
+        var invocationOperation = semanticModel.GetOperation(invocation) as IInvocationOperation;
+        if (invocationOperation != null)
         {
-            if (ReferencesCancellationToken(argument.Expression, ctParameters))
-                return true;
+            foreach (var argument in invocationOperation.Arguments)
+            {
+                if (argument.Parameter != null &&
+                    IsCancellationToken(argument.Parameter.Type) &&
+                    ReferencesCancellationToken(argument.Value.Syntax, ctParameters))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
-        if (ctParameterIndex >= 0 && ctParameterIndex < invocation.ArgumentList.Arguments.Count)
-        {
-            return ReferencesCancellationToken(
-                invocation.ArgumentList.Arguments[ctParameterIndex].Expression,
-                ctParameters);
-        }
-
-        return false;
+        var ctParameterIndex = FindCancellationTokenParameter(methodSymbol);
+        return ctParameterIndex >= 0 &&
+               ctParameterIndex < invocation.ArgumentList.Arguments.Count &&
+               ReferencesCancellationToken(
+                   invocation.ArgumentList.Arguments[ctParameterIndex].Expression,
+                   ctParameters);
     }
 
     private static bool ReferencesCancellationToken(
