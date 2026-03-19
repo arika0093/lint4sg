@@ -184,6 +184,34 @@ public class LSG004_LSG005_CancellationTokenTests
     }
 
     [Fact]
+    public async Task HelperWithCancellationTokenForwardedToExternalCall_NoDiagnostic()
+    {
+        var code = """
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
+
+            public class Generator
+            {
+                public void Initialize()
+                {
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
+                }
+
+                private object Parse(CancellationToken ct)
+                {
+                    return ExternalApi.Analyze(ct);
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
     public async Task NonSourceGeneratorCancellationTokenMethod_DoesNotTriggerCallTreeRule()
     {
         var code = """

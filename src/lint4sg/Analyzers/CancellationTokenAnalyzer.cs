@@ -515,8 +515,7 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
             if (memberAccess.Name.Identifier.Text != "ThrowIfCancellationRequested")
                 continue;
 
-            var receiver = memberAccess.Expression.ToString();
-            if (ctParameters.Any(parameter => receiver == parameter || receiver.Contains(parameter)))
+            if (ReferencesCancellationToken(memberAccess.Expression, ctParameters))
                 return true;
         }
 
@@ -574,18 +573,27 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
     {
         foreach (var argument in invocation.ArgumentList.Arguments)
         {
-            var expressionText = argument.Expression.ToString();
-            if (ctParameters.Any(parameter => expressionText == parameter || expressionText.Contains(parameter)))
+            if (ReferencesCancellationToken(argument.Expression, ctParameters))
                 return true;
         }
 
         if (ctParameterIndex >= 0 && ctParameterIndex < invocation.ArgumentList.Arguments.Count)
         {
-            var expressionText = invocation.ArgumentList.Arguments[ctParameterIndex].Expression.ToString();
-            return ctParameters.Any(parameter => expressionText == parameter || expressionText.Contains(parameter));
+            return ReferencesCancellationToken(
+                invocation.ArgumentList.Arguments[ctParameterIndex].Expression,
+                ctParameters);
         }
 
         return false;
+    }
+
+    private static bool ReferencesCancellationToken(
+        SyntaxNode expression,
+        ImmutableList<string> ctParameters)
+    {
+        return expression.DescendantNodesAndSelf()
+            .OfType<IdentifierNameSyntax>()
+            .Any(identifier => ctParameters.Contains(identifier.Identifier.Text));
     }
 
     private static bool IsProjectMethod(IMethodSymbol methodSymbol)
@@ -602,7 +610,7 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
     private static bool IsCancellationToken(ITypeSymbol type)
     {
         return type.Name == "CancellationToken" &&
-               type.ContainingNamespace?.ToDisplayString() == "System.Threading";
+               type.ContainingNamespace?.ToDisplayString().StartsWith("System.Threading", System.StringComparison.Ordinal) == true;
     }
 
     private static string GetLocationKey(Location location)
