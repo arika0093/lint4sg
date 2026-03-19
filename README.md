@@ -121,30 +121,31 @@ Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/
 
 ### LSG004
 
-**Forward CancellationToken to all accepting callees**
+**Add CancellationToken to helpers in source-generator call trees**
 
-Incremental generators receive a `CancellationToken` that should be propagated through the whole internal call chain.
-
-- If a callee already accepts `CancellationToken`, forward it.
-- If the callee is your own method (same project / source-visible helper) and it does **not** accept `CancellationToken`, add the parameter there as well and keep forwarding it to deeper calls.
-- Very small leaf helpers are tolerated when their internal processing is under 5 lines and they do not continue into other project methods.
+When a source-generator callback receives a `CancellationToken`, walk the helper call tree from that callback. If the tree reaches cancellation-aware work — such as loops or external APIs that offer a `CancellationToken` overload — then every project helper in that path should accept `CancellationToken`.
 
 ```csharp
 // ❌ LSG004
 void Transform(GeneratorSyntaxContext ctx, CancellationToken ct)
 {
-    Parse(); // your own non-trivial helper does not accept CancellationToken
+    Parse();
+}
+
+void Parse()
+{
+    foreach (var item in items)
+    {
+    }
 }
 
 // ✅ OK
-void Transform(GeneratorSyntaxContext ctx, CancellationToken ct)
-{
-    Parse(ct);
-}
-
 void Parse(CancellationToken ct)
 {
-    Analyze(ct);
+    foreach (var item in items)
+    {
+        ct.ThrowIfCancellationRequested();
+    }
 }
 ```
 
@@ -154,9 +155,12 @@ Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/
 
 ### LSG005
 
-**Call ThrowIfCancellationRequested() in each loop iteration**
+**Use available CancellationToken inside the call tree**
 
-When a `CancellationToken` is in scope, every loop must call `ct.ThrowIfCancellationRequested()` to ensure the generator responds promptly to cancellation. Without this, a long-running loop can block the IDE.
+After a helper accepts `CancellationToken`, it must keep using that token correctly:
+
+- pass it to CT-aware child calls
+- call `ThrowIfCancellationRequested()` inside loops
 
 ```csharp
 // ❌ LSG005
@@ -164,7 +168,7 @@ void Process(IEnumerable<ISymbol> symbols, CancellationToken ct)
 {
     foreach (var symbol in symbols) // missing ThrowIfCancellationRequested!
     {
-        Generate(symbol);
+        Generate(symbol, ct);
     }
 }
 
@@ -174,7 +178,7 @@ void Process(IEnumerable<ISymbol> symbols, CancellationToken ct)
     foreach (var symbol in symbols)
     {
         ct.ThrowIfCancellationRequested();
-        Generate(symbol);
+        Generate(symbol, ct);
     }
 }
 ```

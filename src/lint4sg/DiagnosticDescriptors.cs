@@ -5,7 +5,6 @@ namespace lint4sg;
 internal static class DiagnosticDescriptors
 {
     private const string SourceGeneratorCategory = "SourceGenerator";
-
     // LSG001: ISourceGenerator usage
     public static readonly DiagnosticDescriptor LSG001 = new(
         id: "LSG001",
@@ -36,25 +35,25 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "Interface/base-class/attribute inheritance checks in CreateSyntaxProvider are expensive. Predicate checks always run on every syntax change, and transform checks that rely on GetDeclaredSymbol still represent a broad scan unless the pipeline was pre-filtered first. Use ForAttributeWithMetadataName or another narrow pre-filter before performing semantic checks.");
 
-    // LSG004: CancellationToken not forwarded
+    // LSG004: CancellationToken parameter missing on helper
     public static readonly DiagnosticDescriptor LSG004 = new(
         id: "LSG004",
-        title: "Forward CancellationToken",
-        messageFormat: "Propagate CancellationToken for '{0}'. Forward the available token to this call, or add a CancellationToken parameter to your own method and keep forwarding it to nested calls (leaf helpers under 5 lines are allowed).",
+        title: "Add CancellationToken to helper",
+        messageFormat: "Add a CancellationToken parameter to '{0}' because its source-generator call tree reaches cancellation-aware work (child calls with CT support or loops).",
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "When a CancellationToken is available, it must be propagated through the full call chain. Forward it to callees that already accept it, and add a CancellationToken parameter to your own non-trivial helper methods so they can continue propagating cancellation.");
+        description: "When a source-generator callback receives a CancellationToken, project helpers in that call tree must also accept it if the tree eventually reaches cancellation-aware work such as CT-capable external APIs or loops.");
 
-    // LSG005: Missing ThrowIfCancellationRequested in loop
+    // LSG005: CancellationToken available but not used correctly
     public static readonly DiagnosticDescriptor LSG005 = new(
         id: "LSG005",
-        title: "Missing ThrowIfCancellationRequested in loop",
-        messageFormat: "Call ThrowIfCancellationRequested() in each loop iteration when CancellationToken is available",
+        title: "Use available CancellationToken",
+        messageFormat: "Use the available CancellationToken in this call tree: pass it to child calls and check it inside loops.",
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "When a CancellationToken is available and the method contains loops, ThrowIfCancellationRequested() must be called in each iteration to support responsive cancellation.");
+        description: "After a helper accepts a CancellationToken, it must keep forwarding that token to CT-aware child calls and call ThrowIfCancellationRequested() inside loops.");
 
     // LSG006: Non-deterministic value in RegisterSourceOutput (non-collection)
     public static readonly DiagnosticDescriptor LSG006 = new(

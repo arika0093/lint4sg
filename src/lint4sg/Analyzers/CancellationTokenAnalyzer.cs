@@ -4,12 +4,13 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Operations;
 
 namespace lint4sg.Analyzers;
 
 /// <summary>
-/// LSG004: CancellationToken must be forwarded to all methods that accept it.
-/// LSG005: ThrowIfCancellationRequested must be called in each loop when CT is available.
+/// LSG004: Add CancellationToken to project helpers in source-generator call trees that reach cancellation-aware work.
+/// LSG005: Once a CancellationToken is available, pass it to child calls and check it inside loops.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
@@ -21,202 +22,431 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
-        context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.MethodDeclaration);
-        context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.LocalFunctionStatement);
-        context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.AnonymousMethodExpression);
-        context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.SimpleLambdaExpression);
-        context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.ParenthesizedLambdaExpression);
+        context.RegisterCompilationAction(AnalyzeCompilation);
     }
 
-    private static void AnalyzeMethod(SyntaxNodeAnalysisContext context)
+    private static void AnalyzeCompilation(CompilationAnalysisContext context)
     {
-        // Get the cancellation token parameters for this method
-        var ctParameters = GetCancellationTokenParameters(context.Node, context.SemanticModel);
-        if (ctParameters.Count == 0)
+        var methods = CollectProjectMethods(context.Compilation);
+        if (methods.Count == 0)
             return;
 
-        var body = GetMethodBody(context.Node);
-        if (body == null)
+        var roots = FindSourceGeneratorRoots(context.Compilation, methods);
+        if (roots.IsDefaultOrEmpty)
             return;
 
-        // LSG004: Check for method invocations that accept CancellationToken but don't receive it,
-        // and for non-trivial project methods that should accept CancellationToken so that it can
-        // continue flowing through the call chain.
-        AnalyzeCancellationTokenForwarding(
-            context,
-            body,
-            ctParameters,
-            new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default));
+        var state = new AnalysisState(context.Compilation, methods);
+        foreach (var root in roots)
+        {
+            AnalyzeUsageDiagnostics(context, state, root.Body, root.SemanticModel, root.CancellationTokenParameters);
 
-        // LSG005: Check for loops without ThrowIfCancellationRequested
-        AnalyzeLoopsForThrowIfCancelled(context, body, ctParameters);
+            var visited = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+            foreach (var child in GetProjectCallees(root.Body, context.Compilation, methods))
+            {
+                TraverseProjectMethod(context, state, child, visited);
+            }
+        }
+    }
+
+    private static Dictionary<IMethodSymbol, MethodContext> CollectProjectMethods(Compilation compilation)
+    {
+        var methods = new Dictionary<IMethodSymbol, MethodContext>(SymbolEqualityComparer.Default);
+
+        foreach (var syntaxTree in compilation.SyntaxTrees)
+        {
+            var semanticModel = compilation.GetSemanticModel(syntaxTree);
+            var root = syntaxTree.GetRoot();
+
+            foreach (var declaration in root.DescendantNodes().Where(static node =>
+                node is MethodDeclarationSyntax or LocalFunctionStatementSyntax))
+            {
+                var symbol = semanticModel.GetDeclaredSymbol(declaration) as IMethodSymbol;
+                var body = GetMethodBody(declaration);
+                if (symbol == null || body == null || !IsProjectMethod(symbol))
+                    continue;
+
+                methods[symbol.OriginalDefinition] = new MethodContext(
+                    symbol.OriginalDefinition,
+                    body,
+                    semanticModel,
+                    GetMethodLocation(declaration),
+                    GetCancellationTokenParameters(declaration, semanticModel));
+            }
+        }
+
+        return methods;
+    }
+
+    private static ImmutableArray<BodyContext> FindSourceGeneratorRoots(
+        Compilation compilation,
+        Dictionary<IMethodSymbol, MethodContext> methods)
+    {
+        var roots = ImmutableArray.CreateBuilder<BodyContext>();
+        var seen = new HashSet<string>();
+
+        foreach (var syntaxTree in compilation.SyntaxTrees)
+        {
+            var semanticModel = compilation.GetSemanticModel(syntaxTree);
+            var root = syntaxTree.GetRoot();
+
+            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                var invokedMethod = ResolveMethodSymbol(semanticModel, invocation);
+                if (invokedMethod == null || !IsSourceGeneratorCancellationCallback(invokedMethod))
+                    continue;
+
+                foreach (var argument in invocation.ArgumentList.Arguments)
+                {
+                    var parameter = (semanticModel.GetOperation(argument) as IArgumentOperation)?.Parameter;
+                    if (parameter == null || !DelegateAcceptsCancellationToken(parameter.Type))
+                        continue;
+
+                    if (TryCreateBodyContext(argument.Expression, semanticModel, methods, out var bodyContext))
+                    {
+                        var key = GetLocationKey(bodyContext.Location);
+                        if (seen.Add(key))
+                        {
+                            roots.Add(bodyContext);
+                        }
+                    }
+                }
+            }
+        }
+
+        return roots.ToImmutable();
+    }
+
+    private static bool TryCreateBodyContext(
+        ExpressionSyntax expression,
+        SemanticModel semanticModel,
+        Dictionary<IMethodSymbol, MethodContext> methods,
+        out BodyContext bodyContext)
+    {
+        var body = GetMethodBody(expression);
+        if (body != null)
+        {
+            var ctParameters = GetCancellationTokenParameters(expression, semanticModel);
+            if (ctParameters.Count > 0)
+            {
+                bodyContext = new BodyContext(body, semanticModel, expression.GetLocation(), ctParameters);
+                return true;
+            }
+        }
+
+        if (semanticModel.GetSymbolInfo(expression).Symbol is IMethodSymbol methodSymbol &&
+            methods.TryGetValue(methodSymbol.OriginalDefinition, out var methodContext) &&
+            methodContext.CancellationTokenParameters.Count > 0)
+        {
+            bodyContext = new BodyContext(
+                methodContext.Body,
+                methodContext.SemanticModel,
+                methodContext.Location,
+                methodContext.CancellationTokenParameters);
+            return true;
+        }
+
+        bodyContext = default;
+        return false;
+    }
+
+    private static void TraverseProjectMethod(
+        CompilationAnalysisContext context,
+        AnalysisState state,
+        MethodContext method,
+        HashSet<IMethodSymbol> visited)
+    {
+        if (!visited.Add(method.Symbol))
+            return;
+
+        if (!RequiresCancellationToken(state, method))
+            return;
+
+        if (!method.HasCancellationTokenParameter)
+        {
+            if (!IsContractBoundMethod(method.Symbol) && state.ReportedLsg004.Add(method.Symbol))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.LSG004,
+                    method.Location,
+                    method.Symbol.Name));
+            }
+        }
+        else
+        {
+            AnalyzeUsageDiagnostics(
+                context,
+                state,
+                method.Body,
+                method.SemanticModel,
+                method.CancellationTokenParameters);
+        }
+
+        foreach (var child in GetProjectCallees(method.Body, state.Compilation, state.Methods))
+        {
+            TraverseProjectMethod(context, state, child, visited);
+        }
+    }
+
+    private static bool RequiresCancellationToken(AnalysisState state, MethodContext method)
+    {
+        if (state.RequirementCache.TryGetValue(method.Symbol, out var cached))
+            return cached;
+
+        if (!state.RequirementStack.Add(method.Symbol))
+            return false;
+
+        var requiresCancellationToken =
+            GetDirectLoops(method.Body).Any() ||
+            ContainsExternalCancellationAwareInvocation(method.Body, state.Compilation, state.Methods);
+
+        foreach (var child in GetProjectCallees(method.Body, state.Compilation, state.Methods))
+        {
+            if (RequiresCancellationToken(state, child))
+            {
+                requiresCancellationToken = true;
+            }
+        }
+
+        state.RequirementStack.Remove(method.Symbol);
+        state.RequirementCache[method.Symbol] = requiresCancellationToken;
+        return requiresCancellationToken;
+    }
+
+    private static void AnalyzeUsageDiagnostics(
+        CompilationAnalysisContext context,
+        AnalysisState state,
+        SyntaxNode body,
+        SemanticModel semanticModel,
+        ImmutableList<string> cancellationTokenParameters)
+    {
+        foreach (var invocation in GetDirectInvocations(body))
+        {
+            var invocationSemanticModel = state.Compilation.GetSemanticModel(invocation.SyntaxTree);
+            var methodSymbol = ResolveMethodSymbol(invocationSemanticModel, invocation);
+            if (methodSymbol == null)
+                continue;
+
+            if (state.Methods.TryGetValue(methodSymbol.OriginalDefinition, out var childMethod))
+            {
+                if (!RequiresCancellationToken(state, childMethod))
+                    continue;
+
+                var ctParameterIndex = FindCancellationTokenParameter(methodSymbol);
+                if (ctParameterIndex < 0)
+                    continue;
+
+                if (!IsCancellationTokenPassed(invocation, ctParameterIndex, cancellationTokenParameters))
+                {
+                    ReportUsageDiagnostic(context, state, invocation.GetLocation());
+                }
+
+                continue;
+            }
+
+            if (!SupportsCancellationToken(methodSymbol))
+                continue;
+
+            var externalCtParameterIndex = FindCancellationTokenParameter(methodSymbol);
+            if (!IsCancellationTokenPassed(invocation, externalCtParameterIndex, cancellationTokenParameters))
+            {
+                ReportUsageDiagnostic(context, state, invocation.GetLocation());
+            }
+        }
+
+        foreach (var loop in GetDirectLoops(body))
+        {
+            var loopBody = GetLoopBody(loop);
+            if (loopBody == null || ContainsThrowIfCancelled(loopBody, cancellationTokenParameters))
+                continue;
+
+            ReportUsageDiagnostic(context, state, loop.GetLocation());
+        }
+    }
+
+    private static void ReportUsageDiagnostic(
+        CompilationAnalysisContext context,
+        AnalysisState state,
+        Location location)
+    {
+        var key = GetLocationKey(location);
+        if (state.ReportedLsg005Locations.Add(key))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.LSG005,
+                location));
+        }
+    }
+
+    private static bool ContainsExternalCancellationAwareInvocation(
+        SyntaxNode body,
+        Compilation compilation,
+        Dictionary<IMethodSymbol, MethodContext> methods)
+    {
+        foreach (var invocation in GetDirectInvocations(body))
+        {
+            var semanticModel = compilation.GetSemanticModel(invocation.SyntaxTree);
+            var methodSymbol = ResolveMethodSymbol(semanticModel, invocation);
+            if (methodSymbol == null)
+                continue;
+
+            if (methods.ContainsKey(methodSymbol.OriginalDefinition))
+                continue;
+
+            if (SupportsCancellationToken(methodSymbol))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<MethodContext> GetProjectCallees(
+        SyntaxNode body,
+        Compilation compilation,
+        Dictionary<IMethodSymbol, MethodContext> methods)
+    {
+        foreach (var invocation in GetDirectInvocations(body))
+        {
+            var semanticModel = compilation.GetSemanticModel(invocation.SyntaxTree);
+            var methodSymbol = ResolveMethodSymbol(semanticModel, invocation);
+            if (methodSymbol == null)
+                continue;
+
+            if (methods.TryGetValue(methodSymbol.OriginalDefinition, out var methodContext))
+            {
+                yield return methodContext;
+            }
+        }
+    }
+
+    private static bool SupportsCancellationToken(IMethodSymbol methodSymbol)
+    {
+        return FindCancellationTokenParameter(methodSymbol) >= 0 ||
+               HasCancellationTokenOverload(methodSymbol);
+    }
+
+    private static bool HasCancellationTokenOverload(IMethodSymbol methodSymbol)
+    {
+        var containingType = methodSymbol.ContainingType;
+        if (containingType == null)
+            return false;
+
+        var baseSignature = methodSymbol.Parameters
+            .Where(static parameter => !IsCancellationToken(parameter.Type))
+            .Select(static parameter => parameter.Type)
+            .ToArray();
+
+        foreach (var overload in containingType.GetMembers(methodSymbol.Name).OfType<IMethodSymbol>())
+        {
+            if (SymbolEqualityComparer.Default.Equals(overload, methodSymbol))
+                continue;
+
+            if (FindCancellationTokenParameter(overload) < 0)
+                continue;
+
+            var overloadSignature = overload.Parameters
+                .Where(static parameter => !IsCancellationToken(parameter.Type))
+                .Select(static parameter => parameter.Type)
+                .ToArray();
+
+            if (baseSignature.Length != overloadSignature.Length)
+                continue;
+
+            var matches = true;
+            for (var i = 0; i < baseSignature.Length; i++)
+            {
+                if (!SymbolEqualityComparer.Default.Equals(baseSignature[i], overloadSignature[i]))
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsSourceGeneratorCancellationCallback(IMethodSymbol methodSymbol)
+    {
+        var containingNamespace = methodSymbol.ContainingNamespace?.ToDisplayString();
+        if (containingNamespace == null ||
+            !containingNamespace.StartsWith("Microsoft.CodeAnalysis", System.StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return methodSymbol.Parameters.Any(static parameter => DelegateAcceptsCancellationToken(parameter.Type));
+    }
+
+    private static bool DelegateAcceptsCancellationToken(ITypeSymbol typeSymbol)
+    {
+        if (typeSymbol is not INamedTypeSymbol namedType || namedType.TypeKind != TypeKind.Delegate)
+            return false;
+
+        return namedType.DelegateInvokeMethod?.Parameters.Any(static parameter => IsCancellationToken(parameter.Type)) == true;
     }
 
     private static ImmutableList<string> GetCancellationTokenParameters(SyntaxNode node, SemanticModel semanticModel)
     {
-        var parameterList = node switch
+        IEnumerable<ParameterSyntax>? parameters = node switch
         {
-            MethodDeclarationSyntax m => m.ParameterList,
-            LocalFunctionStatementSyntax lf => lf.ParameterList,
-            AnonymousMethodExpressionSyntax am => am.ParameterList,
-            ParenthesizedLambdaExpressionSyntax pl => pl.ParameterList,
-            _ => null
+            MethodDeclarationSyntax method => method.ParameterList.Parameters,
+            LocalFunctionStatementSyntax localFunction => localFunction.ParameterList.Parameters,
+            AnonymousMethodExpressionSyntax anonymousMethod => anonymousMethod.ParameterList?.Parameters,
+            ParenthesizedLambdaExpressionSyntax lambda => lambda.ParameterList.Parameters,
+            SimpleLambdaExpressionSyntax simpleLambda => new ParameterSyntax[] { simpleLambda.Parameter },
+            _ => null,
         };
 
-        if (parameterList == null)
+        if (parameters == null)
             return ImmutableList<string>.Empty;
 
-        var ctParams = ImmutableList.CreateBuilder<string>();
-        foreach (var param in parameterList.Parameters)
+        var ctParameters = ImmutableList.CreateBuilder<string>();
+        foreach (var parameter in parameters)
         {
             ITypeSymbol? typeSymbol;
-            if (param.Type != null)
+            if (parameter.Type != null)
             {
-                typeSymbol = semanticModel.GetSymbolInfo(param.Type).Symbol as ITypeSymbol;
+                typeSymbol = semanticModel.GetSymbolInfo(parameter.Type).Symbol as ITypeSymbol;
             }
             else
             {
-                // Inferred lambda parameter type (common in `(ctx, ct) => ...` callbacks).
-                // GetDeclaredSymbol resolves the parameter symbol whose Type reflects the
-                // delegate's signature even when no explicit type annotation is written.
-                var paramSymbol = semanticModel.GetDeclaredSymbol(param) as IParameterSymbol;
-                typeSymbol = paramSymbol?.Type;
+                var parameterSymbol = semanticModel.GetDeclaredSymbol(parameter) as IParameterSymbol;
+                typeSymbol = parameterSymbol?.Type;
             }
 
             if (typeSymbol != null && IsCancellationToken(typeSymbol))
             {
-                ctParams.Add(param.Identifier.Text);
+                ctParameters.Add(parameter.Identifier.Text);
             }
         }
-        return ctParams.ToImmutable();
+
+        return ctParameters.ToImmutable();
     }
 
     private static SyntaxNode? GetMethodBody(SyntaxNode node)
     {
         return node switch
         {
-            MethodDeclarationSyntax m => (SyntaxNode?)m.Body ?? m.ExpressionBody,
-            LocalFunctionStatementSyntax lf => (SyntaxNode?)lf.Body ?? lf.ExpressionBody,
-            AnonymousMethodExpressionSyntax am => am.Body,
-            ParenthesizedLambdaExpressionSyntax pl => pl.Body,
-            SimpleLambdaExpressionSyntax sl => sl.Body,
-            _ => null
+            MethodDeclarationSyntax method => (SyntaxNode?)method.Body ?? method.ExpressionBody,
+            LocalFunctionStatementSyntax localFunction => (SyntaxNode?)localFunction.Body ?? localFunction.ExpressionBody,
+            AnonymousMethodExpressionSyntax anonymousMethod => anonymousMethod.Body,
+            ParenthesizedLambdaExpressionSyntax lambda => lambda.Body,
+            SimpleLambdaExpressionSyntax simpleLambda => simpleLambda.Body,
+            _ => null,
         };
-    }
-
-    private static void AnalyzeCancellationTokenForwarding(
-        SyntaxNodeAnalysisContext context,
-        SyntaxNode body,
-        ImmutableList<string> ctParameters,
-        HashSet<IMethodSymbol> reportedMissingTokenMethods)
-    {
-        // Find all invocations in the body (but not inside nested methods)
-        foreach (var invocation in GetDirectInvocations(body))
-        {
-            var semanticModel = context.SemanticModel.Compilation.GetSemanticModel(invocation.SyntaxTree);
-            var methodSymbol = ResolveMethodSymbol(semanticModel, invocation);
-            if (methodSymbol == null)
-                continue;
-
-            // Check if this method has a CancellationToken parameter
-            var ctParamIndex = FindCancellationTokenParameter(methodSymbol);
-            if (ctParamIndex >= 0)
-            {
-                // Check if the CancellationToken is being passed in this invocation
-                if (!IsCancellationTokenPassed(invocation, ctParamIndex, ctParameters))
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG004,
-                        invocation.GetLocation(),
-                        methodSymbol.Name));
-                }
-                continue;
-            }
-
-            if (!TryGetOwnMethodBody(methodSymbol, out var calleeBody, out var calleeLocation))
-                continue;
-
-            if (IsContractBoundMethod(methodSymbol))
-                continue;
-
-            if (!RequiresCancellationTokenParameter(context.SemanticModel.Compilation, calleeBody))
-                continue;
-
-            if (!reportedMissingTokenMethods.Add(methodSymbol.OriginalDefinition))
-                continue;
-
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.LSG004,
-                calleeLocation,
-                methodSymbol.Name));
-
-            AnalyzeNestedOwnMethodsWithoutCancellationToken(
-                context,
-                calleeBody,
-                reportedMissingTokenMethods);
-        }
-    }
-
-    private static void AnalyzeNestedOwnMethodsWithoutCancellationToken(
-        SyntaxNodeAnalysisContext context,
-        SyntaxNode body,
-        HashSet<IMethodSymbol> reportedMissingTokenMethods)
-    {
-        foreach (var invocation in GetDirectInvocations(body))
-        {
-            var semanticModel = context.SemanticModel.Compilation.GetSemanticModel(invocation.SyntaxTree);
-            var methodSymbol = ResolveMethodSymbol(semanticModel, invocation);
-            if (methodSymbol == null || FindCancellationTokenParameter(methodSymbol) >= 0)
-                continue;
-
-            if (!TryGetOwnMethodBody(methodSymbol, out var calleeBody, out var calleeLocation))
-                continue;
-
-            if (IsContractBoundMethod(methodSymbol))
-                continue;
-
-            if (!RequiresCancellationTokenParameter(context.SemanticModel.Compilation, calleeBody))
-                continue;
-
-            if (!reportedMissingTokenMethods.Add(methodSymbol.OriginalDefinition))
-                continue;
-
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.LSG004,
-                calleeLocation,
-                methodSymbol.Name));
-
-            AnalyzeNestedOwnMethodsWithoutCancellationToken(
-                context,
-                calleeBody,
-                reportedMissingTokenMethods);
-        }
-    }
-
-    private static void AnalyzeLoopsForThrowIfCancelled(
-        SyntaxNodeAnalysisContext context,
-        SyntaxNode body,
-        ImmutableList<string> ctParameters)
-    {
-        foreach (var loop in GetDirectLoops(body))
-        {
-            var loopBody = GetLoopBody(loop);
-            if (loopBody == null)
-                continue;
-
-            // Check if ThrowIfCancellationRequested is called in this loop body
-            if (!ContainsThrowIfCancelled(loopBody, ctParameters))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG005,
-                    loop.GetLocation()));
-            }
-        }
     }
 
     private static IEnumerable<InvocationExpressionSyntax> GetDirectInvocations(SyntaxNode body)
     {
-        // Get invocations that are not inside nested lambdas/local functions
+        if (body is InvocationExpressionSyntax invocationBody)
+        {
+            yield return invocationBody;
+            yield break;
+        }
+
         foreach (var node in body.ChildNodes())
         {
             foreach (var invocation in GetDirectInvocationsRecursive(node))
@@ -226,7 +456,6 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
 
     private static IEnumerable<InvocationExpressionSyntax> GetDirectInvocationsRecursive(SyntaxNode node)
     {
-        // Stop at nested function boundaries
         if (node is AnonymousMethodExpressionSyntax ||
             node is SimpleLambdaExpressionSyntax ||
             node is ParenthesizedLambdaExpressionSyntax ||
@@ -247,12 +476,12 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
 
     private static IEnumerable<SyntaxNode> GetDirectLoops(SyntaxNode body)
     {
-        foreach (var node in body.DescendantNodes(n =>
-            n == body ||
-            !(n is AnonymousMethodExpressionSyntax ||
-              n is SimpleLambdaExpressionSyntax ||
-              n is ParenthesizedLambdaExpressionSyntax ||
-              n is LocalFunctionStatementSyntax)))
+        foreach (var node in body.DescendantNodes(node =>
+            node == body ||
+            !(node is AnonymousMethodExpressionSyntax ||
+              node is SimpleLambdaExpressionSyntax ||
+              node is ParenthesizedLambdaExpressionSyntax ||
+              node is LocalFunctionStatementSyntax)))
         {
             if (node is ForStatementSyntax ||
                 node is ForEachStatementSyntax ||
@@ -268,11 +497,11 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
     {
         return loop switch
         {
-            ForStatementSyntax f => f.Statement,
-            ForEachStatementSyntax fe => fe.Statement,
-            WhileStatementSyntax w => w.Statement,
-            DoStatementSyntax d => d.Statement,
-            _ => null
+            ForStatementSyntax forStatement => forStatement.Statement,
+            ForEachStatementSyntax forEachStatement => forEachStatement.Statement,
+            WhileStatementSyntax whileStatement => whileStatement.Statement,
+            DoStatementSyntax doStatement => doStatement.Statement,
+            _ => null,
         };
     }
 
@@ -280,29 +509,28 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
     {
         foreach (var invocation in loopBody.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
-            if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
-            {
-                if (memberAccess.Name.Identifier.Text == "ThrowIfCancellationRequested")
-                {
-                    // Check that it's called on one of the CT parameters
-                    var receiver = memberAccess.Expression.ToString();
-                    if (ctParameters.Any(p => receiver.Contains(p)))
-                        return true;
-                    // Also accept if it's just ThrowIfCancellationRequested on any CT
-                    return true;
-                }
-            }
+            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+                continue;
+
+            if (memberAccess.Name.Identifier.Text != "ThrowIfCancellationRequested")
+                continue;
+
+            var receiver = memberAccess.Expression.ToString();
+            if (ctParameters.Any(parameter => receiver == parameter || receiver.Contains(parameter)))
+                return true;
         }
+
         return false;
     }
 
     private static int FindCancellationTokenParameter(IMethodSymbol method)
     {
-        for (int i = 0; i < method.Parameters.Length; i++)
+        for (var index = 0; index < method.Parameters.Length; index++)
         {
-            if (IsCancellationToken(method.Parameters[i].Type))
-                return i;
+            if (IsCancellationToken(method.Parameters[index].Type))
+                return index;
         }
+
         return -1;
     }
 
@@ -323,46 +551,14 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
         return null;
     }
 
-    private static bool TryGetOwnMethodBody(
-        IMethodSymbol methodSymbol,
-        out SyntaxNode body,
-        out Location location)
-    {
-        foreach (var syntaxReference in methodSymbol.DeclaringSyntaxReferences)
-        {
-            var declaration = syntaxReference.GetSyntax();
-            if (declaration is not (MethodDeclarationSyntax or LocalFunctionStatementSyntax))
-                continue;
-
-            var methodBody = GetMethodBody(declaration);
-            if (methodBody == null)
-                continue;
-
-            body = methodBody;
-            location = GetMethodLocation(declaration);
-            return true;
-        }
-
-        body = null!;
-        location = Location.None;
-        return false;
-    }
-
     private static Location GetMethodLocation(SyntaxNode declaration)
     {
         return declaration switch
         {
             MethodDeclarationSyntax method => method.Identifier.GetLocation(),
             LocalFunctionStatementSyntax localFunction => localFunction.Identifier.GetLocation(),
-            _ => declaration.GetLocation()
+            _ => declaration.GetLocation(),
         };
-    }
-
-    private static bool RequiresCancellationTokenParameter(
-        Compilation compilation,
-        SyntaxNode body)
-    {
-        return GetBodyLineCount(body) >= 5 || ContainsOwnMethodInvocation(compilation, body);
     }
 
     private static bool IsContractBoundMethod(IMethodSymbol methodSymbol)
@@ -371,70 +567,97 @@ public sealed class CancellationTokenAnalyzer : DiagnosticAnalyzer
                methodSymbol.ExplicitInterfaceImplementations.Length > 0;
     }
 
-    private static int GetBodyLineCount(SyntaxNode body)
-    {
-        var lineSpan = body.SyntaxTree.GetLineSpan(body.Span);
-        return lineSpan.EndLinePosition.Line - lineSpan.StartLinePosition.Line + 1;
-    }
-
-    private static bool ContainsOwnMethodInvocation(Compilation compilation, SyntaxNode body)
-    {
-        foreach (var invocation in GetDirectInvocations(body))
-        {
-            var semanticModel = compilation.GetSemanticModel(invocation.SyntaxTree);
-            var methodSymbol = ResolveMethodSymbol(semanticModel, invocation);
-            if (methodSymbol?.DeclaringSyntaxReferences.Length > 0)
-                return true;
-        }
-
-        return false;
-    }
-
     private static bool IsCancellationTokenPassed(
         InvocationExpressionSyntax invocation,
-        int ctParamIndex,
+        int ctParameterIndex,
         ImmutableList<string> ctParameters)
     {
-        var args = invocation.ArgumentList.Arguments;
-
-        // Check named arguments for CancellationToken
-        foreach (var arg in args)
+        foreach (var argument in invocation.ArgumentList.Arguments)
         {
-            if (arg.NameColon?.Name.Identifier.Text == "cancellationToken" ||
-                arg.NameColon?.Name.Identifier.Text == "ct" ||
-                arg.NameColon?.Name.Identifier.Text == "token")
-            {
-                return true;
-            }
-
-            // Check if any argument is a cancellation token variable
-            var argText = arg.Expression.ToString();
-            if (ctParameters.Any(p => argText == p || argText.Contains(p)))
+            var expressionText = argument.Expression.ToString();
+            if (ctParameters.Any(parameter => expressionText == parameter || expressionText.Contains(parameter)))
                 return true;
         }
 
-        // Check positional argument
-        if (ctParamIndex < args.Count)
+        if (ctParameterIndex >= 0 && ctParameterIndex < invocation.ArgumentList.Arguments.Count)
         {
-            var argText = args[ctParamIndex].Expression.ToString();
-            return ctParameters.Any(p => argText == p || argText.Contains(p));
-        }
-
-        // Also check if CancellationToken.None or default is being passed - that's acceptable
-        foreach (var arg in args)
-        {
-            var argText = arg.Expression.ToString();
-            if (argText == "CancellationToken.None" || argText == "default" || argText == "default(CancellationToken)")
-                return true;
+            var expressionText = invocation.ArgumentList.Arguments[ctParameterIndex].Expression.ToString();
+            return ctParameters.Any(parameter => expressionText == parameter || expressionText.Contains(parameter));
         }
 
         return false;
+    }
+
+    private static bool IsProjectMethod(IMethodSymbol methodSymbol)
+    {
+        if (methodSymbol.DeclaringSyntaxReferences.Length == 0)
+            return false;
+
+        var containingNamespace = methodSymbol.ContainingNamespace?.ToDisplayString();
+        return containingNamespace == null ||
+               (!containingNamespace.StartsWith("System", System.StringComparison.Ordinal) &&
+                !containingNamespace.StartsWith("Microsoft.CodeAnalysis", System.StringComparison.Ordinal));
     }
 
     private static bool IsCancellationToken(ITypeSymbol type)
     {
         return type.Name == "CancellationToken" &&
-               (type.ContainingNamespace?.ToString() == "System.Threading" ||
-                type.ContainingNamespace?.ToString() == "System.Threading.CancellationToken");
+               type.ContainingNamespace?.ToDisplayString() == "System.Threading";
+    }
+
+    private static string GetLocationKey(Location location)
+    {
+        return $"{location.SourceTree?.FilePath}:{location.SourceSpan.Start}:{location.SourceSpan.Length}";
+    }
+
+    private readonly record struct BodyContext(
+        SyntaxNode Body,
+        SemanticModel SemanticModel,
+        Location Location,
+        ImmutableList<string> CancellationTokenParameters);
+
+    private sealed class MethodContext
+    {
+        public MethodContext(
+            IMethodSymbol symbol,
+            SyntaxNode body,
+            SemanticModel semanticModel,
+            Location location,
+            ImmutableList<string> cancellationTokenParameters)
+        {
+            Symbol = symbol;
+            Body = body;
+            SemanticModel = semanticModel;
+            Location = location;
+            CancellationTokenParameters = cancellationTokenParameters;
+        }
+
+        public IMethodSymbol Symbol { get; }
+        public SyntaxNode Body { get; }
+        public SemanticModel SemanticModel { get; }
+        public Location Location { get; }
+        public ImmutableList<string> CancellationTokenParameters { get; }
+        public bool HasCancellationTokenParameter => CancellationTokenParameters.Count > 0;
+    }
+
+    private sealed class AnalysisState
+    {
+        public AnalysisState(
+            Compilation compilation,
+            Dictionary<IMethodSymbol, MethodContext> methods)
+        {
+            Compilation = compilation;
+            Methods = methods;
+        }
+
+        public Compilation Compilation { get; }
+        public Dictionary<IMethodSymbol, MethodContext> Methods { get; }
+        public Dictionary<IMethodSymbol, bool> RequirementCache { get; } =
+            new(SymbolEqualityComparer.Default);
+        public HashSet<IMethodSymbol> RequirementStack { get; } =
+            new(SymbolEqualityComparer.Default);
+        public HashSet<IMethodSymbol> ReportedLsg004 { get; } =
+            new(SymbolEqualityComparer.Default);
+        public HashSet<string> ReportedLsg005Locations { get; } = new();
     }
 }
