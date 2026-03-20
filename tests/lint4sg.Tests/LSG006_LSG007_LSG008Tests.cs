@@ -409,6 +409,51 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
         await RunTestAsync(code);
     }
 
+    [Fact]
+    public async Task RecordWithEquatableImmutableArrayWrapper_NoLSG007()
+    {
+        var code = """
+            using System.Collections;
+            using System.Collections.Generic;
+            using System.Collections.Immutable;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class EquatableArray<T> : IReadOnlyList<T>, System.IEquatable<EquatableArray<T>>
+            {
+                private readonly ImmutableArray<T> _items;
+
+                public EquatableArray(ImmutableArray<T> items)
+                {
+                    _items = items;
+                }
+
+                public int Count => _items.Length;
+                public T this[int index] => _items[index];
+
+                public bool Equals(EquatableArray<T>? other) => other is not null && Count == other.Count;
+                public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
+                public override int GetHashCode() => Count;
+
+                public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)_items).GetEnumerator();
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+
+            public record GeneratedSourceSetModel(EquatableArray<string> Sources);
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<GeneratedSourceSetModel> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, model) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
     // ── LSG008: SyntaxProvider returns non-deterministic type (warning) ───
 
     [Fact]
@@ -472,6 +517,51 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                 public void Run(SyntaxValueProvider provider)
                 {
                     var result = provider.CreateSyntaxProvider<MyInfo>(
+                        (node, ct) => true,
+                        (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    [Fact]
+    public async Task SyntaxProvider_RecordWithEquatableImmutableArrayWrapper_NoWarning()
+    {
+        var code = """
+            using System.Collections;
+            using System.Collections.Generic;
+            using System.Collections.Immutable;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class EquatableArray<T> : IReadOnlyList<T>, System.IEquatable<EquatableArray<T>>
+            {
+                private readonly ImmutableArray<T> _items;
+
+                public EquatableArray(ImmutableArray<T> items)
+                {
+                    _items = items;
+                }
+
+                public int Count => _items.Length;
+                public T this[int index] => _items[index];
+
+                public bool Equals(EquatableArray<T>? other) => other is not null && Count == other.Count;
+                public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
+                public override int GetHashCode() => Count;
+
+                public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)_items).GetEnumerator();
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+
+            public record GeneratedSourceSetModel(EquatableArray<string> Sources);
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<GeneratedSourceSetModel>(
                         (node, ct) => true,
                         (ctx, ct) => null!);
                 }

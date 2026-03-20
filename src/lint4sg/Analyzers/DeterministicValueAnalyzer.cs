@@ -260,8 +260,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
                 ITypeSymbol? memberType = member switch
                 {
-                    IPropertySymbol prop when !prop.IsStatic => prop.Type,
-                    IFieldSymbol field when !field.IsStatic => field.Type,
+                    IPropertySymbol prop when !prop.IsStatic && ShouldInspectMember(prop, hasValueEquality, checkType) => prop.Type,
+                    IFieldSymbol field when !field.IsStatic && ShouldInspectMember(field, hasValueEquality, checkType) => field.Type,
                     _ => null
                 };
                 if (memberType != null)
@@ -355,6 +355,13 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             i.ContainingNamespace?.ToString() == "System" &&
             i is { TypeArguments.Length: 1 } &&
             SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], type));
+    }
+
+    private static bool ShouldInspectMember(ISymbol member, bool hasValueEquality, INamedTypeSymbol containingType)
+    {
+        return !(hasValueEquality &&
+            containingType.TypeKind == TypeKind.Class &&
+            member.DeclaredAccessibility == Accessibility.Private);
     }
 
 }
