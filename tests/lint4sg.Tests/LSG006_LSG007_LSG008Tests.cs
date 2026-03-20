@@ -27,6 +27,14 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             public struct IncrementalValueProvider<T> { }
             public struct IncrementalValuesProvider<T> { }
 
+            public static class IncrementalProviderExtensions
+            {
+                public static IncrementalValuesProvider<TResult> Select<TSource, TResult>(
+                    this IncrementalValuesProvider<TSource> source,
+                    System.Func<TSource, System.Threading.CancellationToken, TResult> transform)
+                    => default;
+            }
+
             public class IncrementalGeneratorInitializationContext
             {
                 public void RegisterSourceOutput<T>(
@@ -642,6 +650,53 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                     var result = provider.CreateSyntaxProvider<GeneratedSourceSetModel>(
                         (node, ct) => true,
                         (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    [Fact]
+    public async Task SyntaxProvider_ForAttributeWithMetadataName_SelectOverImmutableArrayOfSymbols_ReportsLSG008OnElementType()
+    {
+        var code = """
+            using System.Collections.Immutable;
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.ForAttributeWithMetadataName<ImmutableArray<ISymbol>>(
+                        "MyAttribute",
+                        (node, ct) => true,
+                        (ctx, ct) => default)
+                        .Select((x, ct) => x);
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
+                .WithSpan(8, 22, 11, 34)
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+    }
+
+    [Fact]
+    public async Task SyntaxProvider_CreateSyntaxProvider_ImmutableArrayOfStrings_NoWarning()
+    {
+        var code = """
+            using System.Collections.Immutable;
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<ImmutableArray<string>>(
+                        (node, ct) => true,
+                        (ctx, ct) => default);
                 }
             }
             """;

@@ -137,11 +137,49 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         {
             if (namedType.TypeArguments.Length > 0)
             {
-                CheckTypeForNonDeterminism(context, namedType.TypeArguments[0],
-                    invocation.GetLocation(), isRegisterMethod: false,
+                CheckSyntaxProviderElementTypeForNonDeterminism(
+                    context,
+                    namedType.TypeArguments[0],
+                    invocation.GetLocation(),
                     ImmutableHashSet<string>.Empty);
             }
         }
+    }
+
+    private static void CheckSyntaxProviderElementTypeForNonDeterminism(
+        SyntaxNodeAnalysisContext context,
+        ITypeSymbol type,
+        Location location,
+        ImmutableHashSet<string> visitedTypeIds)
+    {
+        switch (type)
+        {
+            case IArrayTypeSymbol arrayType:
+                CheckSyntaxProviderElementTypeForNonDeterminism(
+                    context,
+                    arrayType.ElementType,
+                    location,
+                    visitedTypeIds);
+                return;
+            case INamedTypeSymbol namedType when namedType.IsGenericType &&
+                                                CollectionTypeNames.Contains(namedType.Name):
+                foreach (var typeArgument in namedType.TypeArguments)
+                {
+                    CheckSyntaxProviderElementTypeForNonDeterminism(
+                        context,
+                        typeArgument,
+                        location,
+                        visitedTypeIds);
+                }
+                return;
+        }
+
+        CheckTypeForNonDeterminism(
+            context,
+            type,
+            location,
+            isRegisterMethod: false,
+            visitedTypeIds);
     }
 
     private static void CheckTypeForNonDeterminism(
