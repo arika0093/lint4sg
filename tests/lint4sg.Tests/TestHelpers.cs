@@ -77,6 +77,12 @@ internal static class TestHelpers
                     => null!;
             }
             public abstract class Compilation { }
+
+            public static class ExternalApi
+            {
+                public static object Analyze() => null!;
+                public static object Analyze(System.Threading.CancellationToken cancellationToken) => null!;
+            }
         }
         """;
 

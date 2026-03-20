@@ -8,277 +8,174 @@ namespace lint4sg.Tests;
 public class LSG004_LSG005_CancellationTokenTests
 {
     [Fact]
-    public async Task MethodWithCTNotForwardedToSubMethod_ReportsLSG004()
+    public async Task SourceGeneratorCallTreeWithLoop_ReportsLSG004ForEveryMissingHelper()
     {
         var code = """
-            using System.Threading;
+            using System.Collections.Generic;
+            using Microsoft.CodeAnalysis;
 
             public class Generator
             {
-                public void Process(CancellationToken cancellationToken)
+                public void Initialize()
                 {
-                    DoWork();
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse());
                 }
 
-                private void DoWork(CancellationToken ct = default) { }
-            }
-            """;
-
-        var expected = new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(7, 9, 7, 17)
-            .WithArguments("DoWork");
-
-        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
-        await test.RunAsync();
-    }
-
-    [Fact]
-    public async Task MethodWithCTForwardedToSubMethod_NoLSG004()
-    {
-        var code = """
-            using System.Threading;
-
-            public class Generator
-            {
-                public void Process(CancellationToken cancellationToken)
+                private object Parse()
                 {
-                    DoWork(cancellationToken);
+                    return Analyze();
                 }
 
-                private void DoWork(CancellationToken ct = default) { }
-            }
-            """;
-
-        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
-        await test.RunAsync();
-    }
-
-    [Fact]
-    public async Task RecursiveOwnCallChainWithoutCancellationToken_ReportsEveryMethodInChain()
-    {
-        var code = """
-            using System.Threading;
-
-            public class Generator
-            {
-                public void Transform(CancellationToken cancellationToken)
+                private object Analyze()
                 {
-                    A();
-                }
+                    foreach (var item in new List<int>())
+                    {
+                    }
 
-                private void A()
-                {
-                    var a = 0;
-                    a++;
-                    a++;
-                    B();
-                }
-
-                private void B()
-                {
-                    var b = 0;
-                    b++;
-                    b++;
-                    C();
-                }
-
-                private void C()
-                {
-                    var c = 0;
-                    c++;
-                    c++;
-                    c++;
+                    return null!;
                 }
             }
             """;
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code,
             new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-                .WithSpan(10, 18, 10, 19)
-                .WithArguments("A"),
+                .WithSpan(14, 20, 14, 25)
+                .WithArguments("Parse"),
             new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-                .WithSpan(18, 18, 18, 19)
-                .WithArguments("B"),
-            new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-                .WithSpan(26, 18, 26, 19)
-                .WithArguments("C"));
+                .WithSpan(19, 20, 19, 27)
+                .WithArguments("Analyze"));
 
         await test.RunAsync();
     }
 
     [Fact]
-    public async Task ShortLeafHelperWithoutCancellationToken_IsAllowed()
+    public async Task SourceGeneratorCallTreeWithExternalCtOverload_ReportsLSG004ForMissingHelper()
     {
         var code = """
-            using System.Threading;
+            using Microsoft.CodeAnalysis;
 
             public class Generator
             {
-                public void Transform(CancellationToken cancellationToken)
+                public void Initialize()
                 {
-                    Log();
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse());
                 }
 
-                private void Log() => System.Console.WriteLine("trace");
-            }
-            """;
-
-        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
-        await test.RunAsync();
-    }
-
-    [Fact]
-    public async Task OverrideMethodWithoutCancellationToken_IsAllowed()
-    {
-        var code = """
-            using System.Threading;
-
-            public abstract class BaseGenerator
-            {
-                protected abstract void ExecuteCore();
-            }
-
-            public sealed class Generator : BaseGenerator
-            {
-                public void Transform(CancellationToken cancellationToken)
+                private object Parse()
                 {
-                    ExecuteCore();
-                }
-
-                protected override void ExecuteCore()
-                {
-                    System.Console.WriteLine("work");
-                    System.Console.WriteLine("more");
-                    System.Console.WriteLine("still work");
+                    return ExternalApi.Analyze();
                 }
             }
             """;
 
-        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
-        await test.RunAsync();
-    }
-
-    [Fact]
-    public async Task ExplicitInterfaceImplementationWithoutCancellationToken_IsAllowed()
-    {
-        var code = """
-            using System.Collections;
-            using System.Threading;
-
-            public sealed class Generator : IEnumerable
-            {
-                public void Transform(CancellationToken cancellationToken)
-                {
-                    ((IEnumerable)this).GetEnumerator();
-                }
-
-                IEnumerator IEnumerable.GetEnumerator()
-                {
-                    yield break;
-                }
-            }
-            """;
-
-        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
-        await test.RunAsync();
-    }
-
-    [Fact]
-    public async Task MethodWithForLoopAndNoThrowIfCancelled_ReportsLSG005()
-    {
-        var code = """
-            using System.Threading;
-
-            public class Generator
-            {
-                public void Process(CancellationToken cancellationToken)
-                {
-                    for (int i = 0; i < 10; i++)
-                    {
-                        DoWork();
-                    }
-                }
-
-                private void DoWork() { }
-            }
-            """;
-
-        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(7, 9, 10, 10);
+        var expected = new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .WithSpan(13, 20, 13, 25)
+            .WithArguments("Parse");
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
     }
 
     [Fact]
-    public async Task MethodWithForLoopAndThrowIfCancelled_NoLSG005()
+    public async Task HelperWithCancellationTokenMustForwardToExternalCall_ReportsLSG005()
     {
         var code = """
             using System.Threading;
+            using Microsoft.CodeAnalysis;
 
             public class Generator
             {
-                public void Process(CancellationToken cancellationToken)
+                public void Initialize()
                 {
-                    for (int i = 0; i < 10; i++)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        DoWork();
-                    }
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
                 }
 
-                private void DoWork() { }
+                private object Parse(CancellationToken ct)
+                {
+                    return ExternalApi.Analyze();
+                }
             }
             """;
 
-        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .WithSpan(16, 16, 16, 37);
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
     }
 
     [Fact]
-    public async Task MethodWithForeachLoopAndNoThrowIfCancelled_ReportsLSG005()
+    public async Task HelperWithCancellationTokenMustCheckLoops_ReportsLSG005()
     {
         var code = """
-            using System.Threading;
             using System.Collections.Generic;
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
 
             public class Generator
             {
-                public void Process(IEnumerable<string> items, CancellationToken cancellationToken)
+                public void Initialize()
                 {
-                    foreach (var item in items)
-                    {
-                        DoWork(item);
-                    }
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
                 }
 
-                private void DoWork(string item) { }
+                private object Parse(CancellationToken ct)
+                {
+                    foreach (var item in new List<int>())
+                    {
+                    }
+
+                    return null!;
+                }
             }
             """;
 
         var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(8, 9, 11, 10);
+            .WithSpan(17, 9, 19, 10);
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
     }
 
     [Fact]
-    public async Task MethodWithNoLoop_NoLSG005()
+    public async Task HelperWithCancellationTokenAndLoopCheck_NoDiagnostic()
     {
         var code = """
+            using System.Collections.Generic;
             using System.Threading;
+            using Microsoft.CodeAnalysis;
 
             public class Generator
             {
-                public void Process(CancellationToken cancellationToken)
+                public void Initialize()
                 {
-                    DoWork();
-                    DoOtherWork();
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
                 }
 
-                private void DoWork() { }
-                private void DoOtherWork() { }
+                private object Parse(CancellationToken ct)
+                {
+                    foreach (var item in new List<int>())
+                    {
+                        ct.ThrowIfCancellationRequested();
+                    }
+
+                    return ExternalApi.Analyze(ct);
+                }
             }
             """;
 
@@ -286,65 +183,164 @@ public class LSG004_LSG005_CancellationTokenTests
         await test.RunAsync();
     }
 
-    // ── Inferred lambda CancellationToken parameters ──────────────────────
-    // Common in incremental-generator callbacks: `(ctx, ct) => ...` where the
-    // parameter types are inferred from the Func<> delegate, not written explicitly.
-
     [Fact]
-    public async Task Lambda_InferredCT_ForLoopWithoutThrowIfCancelled_ReportsLSG005()
+    public async Task HelperWithCancellationTokenForwardedToExternalCall_NoDiagnostic()
     {
-        // The lambda (ctx, ct) => { ... } has its CancellationToken 'ct' inferred
-        // from SyntaxValueProvider.CreateSyntaxProvider's Func<..., CancellationToken, ...>.
-        // LSG005 must still fire because the for-loop inside doesn't call
-        // ThrowIfCancellationRequested().
         var code = """
             using System.Threading;
             using Microsoft.CodeAnalysis;
 
             public class Generator
             {
-                public void Initialize(object context)
+                public void Initialize()
                 {
                     var provider = new SyntaxValueProvider();
                     provider.CreateSyntaxProvider(
                         (node, ct) => true,
-                        (ctx, ct) =>
-                        {
-                            for (int i = 0; i < 10; i++)
-                            {
-                            }
-                            return null!;
-                        });
+                        (ctx, ct) => Parse(ct));
+                }
+
+                private object Parse(CancellationToken ct)
+                {
+                    return ExternalApi.Analyze(ct);
                 }
             }
             """;
 
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task HelperWithCancellationTokenCallingProjectOverloadWithoutCt_ReportsLSG005()
+    {
+        var code = """
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
+
+            public class Generator
+            {
+                public void Initialize()
+                {
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
+                }
+
+                private object Parse(CancellationToken ct)
+                {
+                    return Analyze();
+                }
+
+                private object Analyze() => null!;
+                private object Analyze(CancellationToken ct) => null!;
+            }
+            """;
+
         var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(13, 17, 15, 18);
+            .WithSpan(16, 16, 16, 25);
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
     }
 
     [Fact]
-    public async Task Lambda_InferredCT_ForwardedToSubMethod_NoLSG004()
+    public async Task HelperWithCancellationTokenReferencedInWrongArgument_ReportsLSG005()
     {
-        // With a properly forwarded inferred CancellationToken, LSG004 must NOT fire.
         var code = """
             using System.Threading;
             using Microsoft.CodeAnalysis;
 
             public class Generator
             {
-                public void Initialize(object context)
+                public void Initialize()
                 {
                     var provider = new SyntaxValueProvider();
                     provider.CreateSyntaxProvider(
                         (node, ct) => true,
-                        (ctx, ct) => DoWork(ct));
+                        (ctx, ct) => Parse(ct));
                 }
 
-                private object DoWork(CancellationToken token = default) => null!;
+                private object Parse(CancellationToken ct)
+                {
+                    return Analyze(ct.ToString(), default);
+                }
+
+                private object Analyze(string text, CancellationToken cancellationToken)
+                {
+                    return ExternalApi.Analyze(cancellationToken);
+                }
+            }
+            """;
+
+        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .WithSpan(16, 16, 16, 47);
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task LoopWithThrowIfCancelledOnlyInsideNestedLambda_ReportsLSG005()
+    {
+        var code = """
+            using System;
+            using System.Collections.Generic;
+            using System.Threading;
+            using Microsoft.CodeAnalysis;
+
+            public class Generator
+            {
+                public void Initialize()
+                {
+                    var provider = new SyntaxValueProvider();
+                    provider.CreateSyntaxProvider(
+                        (node, ct) => true,
+                        (ctx, ct) => Parse(ct));
+                }
+
+                private object Parse(CancellationToken ct)
+                {
+                    foreach (var item in new List<int>())
+                    {
+                        Action action = () => ct.ThrowIfCancellationRequested();
+                    }
+
+                    return null!;
+                }
+            }
+            """;
+
+        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .WithSpan(18, 9, 21, 10);
+
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task NonSourceGeneratorCancellationTokenMethod_DoesNotTriggerCallTreeRule()
+    {
+        var code = """
+            using System.Collections.Generic;
+            using System.Threading;
+
+            public class Generator
+            {
+                public void Process(CancellationToken ct)
+                {
+                    Parse();
+                }
+
+                private object Parse()
+                {
+                    foreach (var item in new List<int>())
+                    {
+                    }
+
+                    return null!;
+                }
             }
             """;
 
