@@ -246,6 +246,44 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                 .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
     }
 
+    [Fact]
+    public async Task ReferenceTypeWithValueEqualityButPrivateISymbolField_ReportsLSG006()
+    {
+        var code = """
+            using System;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class StableData : IEquatable<StableData>
+            {
+                private readonly ISymbol _symbol;
+
+                public StableData(ISymbol symbol)
+                {
+                    _symbol = symbol;
+                }
+
+                public bool Equals(StableData? other) => ReferenceEquals(_symbol, other?._symbol);
+                public override bool Equals(object? obj) => obj is StableData other && Equals(other);
+                public override int GetHashCode() => 0;
+            }
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<StableData> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, data) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
+                .WithSpan(24, 9, 24, 63)
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+    }
+
     // ── LSG006: non-deterministic type inside record (child / grandchild) ─
 
     [Fact]
@@ -503,6 +541,44 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
                 .WithSpan(9, 22, 11, 32)
                 .WithArguments("Microsoft.CodeAnalysis.SemanticModel"));
+    }
+
+    [Fact]
+    public async Task SyntaxProvider_ValueEqualityTypeWithPrivateISymbolField_ReportsLSG008()
+    {
+        var code = """
+            using System;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class StableData : IEquatable<StableData>
+            {
+                private readonly ISymbol _symbol;
+
+                public StableData(ISymbol symbol)
+                {
+                    _symbol = symbol;
+                }
+
+                public bool Equals(StableData? other) => ReferenceEquals(_symbol, other?._symbol);
+                public override bool Equals(object? obj) => obj is StableData other && Equals(other);
+                public override int GetHashCode() => 0;
+            }
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<StableData>(
+                        (node, ct) => true,
+                        (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
+                .WithSpan(22, 22, 24, 32)
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
     }
 
     [Fact]

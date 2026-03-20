@@ -260,12 +260,25 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
                 ITypeSymbol? memberType = member switch
                 {
-                    IPropertySymbol prop when !prop.IsStatic && ShouldInspectMember(prop, hasValueEquality, checkType) => prop.Type,
-                    IFieldSymbol field when !field.IsStatic && ShouldInspectMember(field, hasValueEquality, checkType) => field.Type,
+                    IPropertySymbol prop when !prop.IsStatic => prop.Type,
+                    IFieldSymbol field when !field.IsStatic => field.Type,
                     _ => null
                 };
                 if (memberType != null)
+                {
+                    if (IsHiddenCollectionStorage(member, memberType, hasValueEquality, checkType))
+                    {
+                        CheckContainedTypeArgumentsForNonDeterminism(
+                            context,
+                            memberType,
+                            location,
+                            isRegisterMethod,
+                            updatedVisited);
+                        continue;
+                    }
+
                     CheckTypeForNonDeterminism(context, memberType, location, isRegisterMethod, updatedVisited);
+                }
             }
         }
     }
@@ -357,18 +370,51 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], type));
     }
 
-    private static bool ShouldInspectMember(ISymbol member, bool hasValueEquality, INamedTypeSymbol containingType)
+    private static bool IsHiddenCollectionStorage(
+        ISymbol member,
+        ITypeSymbol memberType,
+        bool hasValueEquality,
+        INamedTypeSymbol containingType)
     {
-        // For custom value-equality classes, private fields/properties are implementation details
-        // of the equality contract and should not be treated as exposed pipeline state.
-        if (hasValueEquality &&
+        return hasValueEquality &&
             containingType.TypeKind == TypeKind.Class &&
-            member.DeclaredAccessibility == Accessibility.Private)
-        {
+            IsCollectionLike(containingType) &&
+            member.DeclaredAccessibility == Accessibility.Private &&
+            IsCollectionStorageType(memberType);
+    }
+
+    private static bool IsCollectionStorageType(ITypeSymbol type)
+    {
+        if (type is IArrayTypeSymbol)
+            return true;
+
+        if (type is not INamedTypeSymbol namedType)
             return false;
+
+        return (namedType.IsGenericType && CollectionTypeNames.Contains(namedType.Name)) ||
+            IsCollectionLike(namedType);
+    }
+
+    private static void CheckContainedTypeArgumentsForNonDeterminism(
+        SyntaxNodeAnalysisContext context,
+        ITypeSymbol type,
+        Location location,
+        bool isRegisterMethod,
+        ImmutableHashSet<string> visitedTypeIds)
+    {
+        if (type is IArrayTypeSymbol arrayType)
+        {
+            CheckTypeForNonDeterminism(context, arrayType.ElementType, location, isRegisterMethod, visitedTypeIds);
+            return;
         }
 
-        return true;
+        if (type is not INamedTypeSymbol namedType || !namedType.IsGenericType)
+            return;
+
+        foreach (var typeArgument in namedType.TypeArguments)
+        {
+            CheckTypeForNonDeterminism(context, typeArgument, location, isRegisterMethod, visitedTypeIds);
+        }
     }
 
 }

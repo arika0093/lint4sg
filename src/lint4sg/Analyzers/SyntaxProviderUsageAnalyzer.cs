@@ -165,8 +165,13 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         if (ContainsIntentionalCreateSyntaxProviderMarker(invocation.GetLeadingTrivia()))
             return true;
 
+        if (ContainsIntentionalCreateSyntaxProviderMarker(invocation.GetTrailingTrivia()))
+            return true;
+
         var statement = invocation.AncestorsAndSelf().OfType<StatementSyntax>().FirstOrDefault();
-        return statement != null && ContainsIntentionalCreateSyntaxProviderMarker(statement.GetLeadingTrivia());
+        return statement != null &&
+            (ContainsIntentionalCreateSyntaxProviderMarker(statement.GetLeadingTrivia()) ||
+             ContainsIntentionalCreateSyntaxProviderMarker(statement.GetTrailingTrivia()));
     }
 
     private static bool ContainsIntentionalCreateSyntaxProviderMarker(SyntaxTriviaList triviaList)

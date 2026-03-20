@@ -85,6 +85,28 @@ public class LSG002_LSG003_SyntaxProviderTests
     }
 
     [Fact]
+    public async Task CreateSyntaxProvider_WithIntentionalTrailingMarker_DoesNotReportLSG002()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(object context)
+                {
+                    var provider = new SyntaxValueProvider();
+                    var result = provider.CreateSyntaxProvider(
+                        (node, ct) => node is object,
+                        (ctx, ct) => ctx); // lint4sg-allow-create-syntax-provider
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
     public async Task CreateSyntaxProvider_WithInheritanceCheck_ReportsLSG003()
     {
         var code = """
