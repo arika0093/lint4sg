@@ -359,9 +359,16 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
     private static bool ShouldInspectMember(ISymbol member, bool hasValueEquality, INamedTypeSymbol containingType)
     {
-        return !(hasValueEquality &&
+        // For custom value-equality classes, private fields/properties are implementation details
+        // of the equality contract and should not be treated as exposed pipeline state.
+        if (hasValueEquality &&
             containingType.TypeKind == TypeKind.Class &&
-            member.DeclaredAccessibility == Accessibility.Private);
+            member.DeclaredAccessibility == Accessibility.Private)
+        {
+            return false;
+        }
+
+        return true;
     }
 
 }

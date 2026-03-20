@@ -173,9 +173,13 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
     {
         foreach (var trivia in triviaList)
         {
-            if ((trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) ||
-                 trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)) &&
-                trivia.ToString().IndexOf(IntentionalCreateSyntaxProviderMarker, StringComparison.OrdinalIgnoreCase) >= 0)
+            if (!trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) &&
+                !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+            {
+                continue;
+            }
+
+            if (trivia.ToFullString().Contains(IntentionalCreateSyntaxProviderMarker, StringComparison.Ordinal))
             {
                 return true;
             }

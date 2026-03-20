@@ -416,6 +416,7 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             using System.Collections;
             using System.Collections.Generic;
             using System.Collections.Immutable;
+            using System.Linq;
             using Microsoft.CodeAnalysis;
 
             public sealed class EquatableArray<T> : IReadOnlyList<T>, System.IEquatable<EquatableArray<T>>
@@ -430,7 +431,7 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                 public int Count => _items.Length;
                 public T this[int index] => _items[index];
 
-                public bool Equals(EquatableArray<T>? other) => other is not null && Count == other.Count;
+                public bool Equals(EquatableArray<T>? other) => other is not null && _items.SequenceEqual(other._items);
                 public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
                 public override int GetHashCode() => Count;
 
@@ -533,6 +534,7 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             using System.Collections;
             using System.Collections.Generic;
             using System.Collections.Immutable;
+            using System.Linq;
             using Microsoft.CodeAnalysis;
 
             public sealed class EquatableArray<T> : IReadOnlyList<T>, System.IEquatable<EquatableArray<T>>
@@ -547,7 +549,7 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                 public int Count => _items.Length;
                 public T this[int index] => _items[index];
 
-                public bool Equals(EquatableArray<T>? other) => other is not null && Count == other.Count;
+                public bool Equals(EquatableArray<T>? other) => other is not null && _items.SequenceEqual(other._items);
                 public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
                 public override int GetHashCode() => Count;
 
