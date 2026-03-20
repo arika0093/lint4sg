@@ -19,11 +19,11 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor LSG002 = new(
         id: "LSG002",
         title: "Prefer ForAttributeWithMetadataName",
-        messageFormat: "Prefer ForAttributeWithMetadataName over CreateSyntaxProvider for better performance. Use CreateSyntaxProvider only when attribute-based filtering is not applicable.",
+        messageFormat: "Prefer ForAttributeWithMetadataName over CreateSyntaxProvider for better performance. Use CreateSyntaxProvider only when attribute-based filtering is not applicable, or mark an intentional use with 'lint4sg-allow-create-syntax-provider'.",
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "ForAttributeWithMetadataName (FAWMN) is optimized to filter nodes efficiently. Use CreateSyntaxProvider only when FAWMN is not applicable.");
+        description: "ForAttributeWithMetadataName (FAWMN) is optimized to filter nodes efficiently. Use CreateSyntaxProvider only when FAWMN is not applicable. To acknowledge an intentional exception, add a nearby comment containing 'lint4sg-allow-create-syntax-provider'.");
 
     // LSG003: High-cost CreateSyntaxProvider inheritance scan
     public static readonly DiagnosticDescriptor LSG003 = new(

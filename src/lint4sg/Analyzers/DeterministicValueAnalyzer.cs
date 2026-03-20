@@ -265,7 +265,20 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
                     _ => null
                 };
                 if (memberType != null)
+                {
+                    if (IsHiddenCollectionStorage(member, memberType, hasValueEquality, checkType))
+                    {
+                        CheckContainedTypeArgumentsForNonDeterminism(
+                            context,
+                            memberType,
+                            location,
+                            isRegisterMethod,
+                            updatedVisited);
+                        continue;
+                    }
+
                     CheckTypeForNonDeterminism(context, memberType, location, isRegisterMethod, updatedVisited);
+                }
             }
         }
     }
@@ -355,6 +368,53 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             i.ContainingNamespace?.ToString() == "System" &&
             i is { TypeArguments.Length: 1 } &&
             SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], type));
+    }
+
+    private static bool IsHiddenCollectionStorage(
+        ISymbol member,
+        ITypeSymbol memberType,
+        bool hasValueEquality,
+        INamedTypeSymbol containingType)
+    {
+        return hasValueEquality &&
+            containingType.TypeKind == TypeKind.Class &&
+            IsCollectionLike(containingType) &&
+            member.DeclaredAccessibility == Accessibility.Private &&
+            IsCollectionStorageType(memberType);
+    }
+
+    private static bool IsCollectionStorageType(ITypeSymbol type)
+    {
+        if (type is IArrayTypeSymbol)
+            return true;
+
+        if (type is not INamedTypeSymbol namedType)
+            return false;
+
+        return (namedType.IsGenericType && CollectionTypeNames.Contains(namedType.Name)) ||
+            IsCollectionLike(namedType);
+    }
+
+    private static void CheckContainedTypeArgumentsForNonDeterminism(
+        SyntaxNodeAnalysisContext context,
+        ITypeSymbol type,
+        Location location,
+        bool isRegisterMethod,
+        ImmutableHashSet<string> visitedTypeIds)
+    {
+        if (type is IArrayTypeSymbol arrayType)
+        {
+            CheckTypeForNonDeterminism(context, arrayType.ElementType, location, isRegisterMethod, visitedTypeIds);
+            return;
+        }
+
+        if (type is not INamedTypeSymbol namedType || !namedType.IsGenericType)
+            return;
+
+        foreach (var typeArgument in namedType.TypeArguments)
+        {
+            CheckTypeForNonDeterminism(context, typeArgument, location, isRegisterMethod, visitedTypeIds);
+        }
     }
 
 }

@@ -246,6 +246,44 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                 .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
     }
 
+    [Fact]
+    public async Task ReferenceTypeWithValueEqualityButPrivateISymbolField_ReportsLSG006()
+    {
+        var code = """
+            using System;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class StableData : IEquatable<StableData>
+            {
+                private readonly ISymbol _symbol;
+
+                public StableData(ISymbol symbol)
+                {
+                    _symbol = symbol;
+                }
+
+                public bool Equals(StableData? other) => ReferenceEquals(_symbol, other?._symbol);
+                public override bool Equals(object? obj) => obj is StableData other && Equals(other);
+                public override int GetHashCode() => 0;
+            }
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<StableData> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, data) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
+                .WithSpan(24, 9, 24, 63)
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+    }
+
     // ── LSG006: non-deterministic type inside record (child / grandchild) ─
 
     [Fact]
@@ -409,6 +447,52 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
         await RunTestAsync(code);
     }
 
+    [Fact]
+    public async Task RecordWithEquatableImmutableArrayWrapper_NoLSG007()
+    {
+        var code = """
+            using System.Collections;
+            using System.Collections.Generic;
+            using System.Collections.Immutable;
+            using System.Linq;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class EquatableArray<T> : IReadOnlyList<T>, System.IEquatable<EquatableArray<T>>
+            {
+                private readonly ImmutableArray<T> _items;
+
+                public EquatableArray(ImmutableArray<T> items)
+                {
+                    _items = items;
+                }
+
+                public int Count => _items.Length;
+                public T this[int index] => _items[index];
+
+                public bool Equals(EquatableArray<T>? other) => other is not null && _items.SequenceEqual(other._items);
+                public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
+                public override int GetHashCode() => Count;
+
+                public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)_items).GetEnumerator();
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+
+            public record GeneratedSourceSetModel(EquatableArray<string> Sources);
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<GeneratedSourceSetModel> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, model) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
     // ── LSG008: SyntaxProvider returns non-deterministic type (warning) ───
 
     [Fact]
@@ -460,6 +544,44 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
     }
 
     [Fact]
+    public async Task SyntaxProvider_ValueEqualityTypeWithPrivateISymbolField_ReportsLSG008()
+    {
+        var code = """
+            using System;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class StableData : IEquatable<StableData>
+            {
+                private readonly ISymbol _symbol;
+
+                public StableData(ISymbol symbol)
+                {
+                    _symbol = symbol;
+                }
+
+                public bool Equals(StableData? other) => ReferenceEquals(_symbol, other?._symbol);
+                public override bool Equals(object? obj) => obj is StableData other && Equals(other);
+                public override int GetHashCode() => 0;
+            }
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<StableData>(
+                        (node, ct) => true,
+                        (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code,
+            new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
+                .WithSpan(22, 22, 24, 32)
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+    }
+
+    [Fact]
     public async Task SyntaxProvider_RecordWithEquatableMembers_NoWarning()
     {
         var code = """
@@ -472,6 +594,52 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                 public void Run(SyntaxValueProvider provider)
                 {
                     var result = provider.CreateSyntaxProvider<MyInfo>(
+                        (node, ct) => true,
+                        (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    [Fact]
+    public async Task SyntaxProvider_RecordWithEquatableImmutableArrayWrapper_NoWarning()
+    {
+        var code = """
+            using System.Collections;
+            using System.Collections.Generic;
+            using System.Collections.Immutable;
+            using System.Linq;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class EquatableArray<T> : IReadOnlyList<T>, System.IEquatable<EquatableArray<T>>
+            {
+                private readonly ImmutableArray<T> _items;
+
+                public EquatableArray(ImmutableArray<T> items)
+                {
+                    _items = items;
+                }
+
+                public int Count => _items.Length;
+                public T this[int index] => _items[index];
+
+                public bool Equals(EquatableArray<T>? other) => other is not null && _items.SequenceEqual(other._items);
+                public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
+                public override int GetHashCode() => Count;
+
+                public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)_items).GetEnumerator();
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+
+            public record GeneratedSourceSetModel(EquatableArray<string> Sources);
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<GeneratedSourceSetModel>(
                         (node, ct) => true,
                         (ctx, ct) => null!);
                 }

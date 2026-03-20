@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -14,6 +15,8 @@ namespace lint4sg.Analyzers;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
 {
+    private const string IntentionalCreateSyntaxProviderMarker = "lint4sg-allow-create-syntax-provider";
+
     // High-cost member access names that indicate inheritance/interface checking
     private static readonly ImmutableHashSet<string> HighCostMemberNames = ImmutableHashSet.Create(
         StringComparer.Ordinal,
@@ -85,9 +88,12 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         if (isCreateSyntaxProvider)
         {
             // LSG002: Warn about using CreateSyntaxProvider
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.LSG002,
-                invocation.GetLocation()));
+            if (!HasIntentionalCreateSyntaxProviderMarker(invocation))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.LSG002,
+                    invocation.GetLocation()));
+            }
         }
 
         var arguments = invocation.ArgumentList.Arguments;
@@ -151,6 +157,39 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
                     return true;
             }
         }
+        return false;
+    }
+
+    private static bool HasIntentionalCreateSyntaxProviderMarker(InvocationExpressionSyntax invocation)
+    {
+        if (ContainsIntentionalCreateSyntaxProviderMarker(invocation.GetLeadingTrivia()))
+            return true;
+
+        if (ContainsIntentionalCreateSyntaxProviderMarker(invocation.GetTrailingTrivia()))
+            return true;
+
+        var statement = invocation.AncestorsAndSelf().OfType<StatementSyntax>().FirstOrDefault();
+        return statement != null &&
+            (ContainsIntentionalCreateSyntaxProviderMarker(statement.GetLeadingTrivia()) ||
+             ContainsIntentionalCreateSyntaxProviderMarker(statement.GetTrailingTrivia()));
+    }
+
+    private static bool ContainsIntentionalCreateSyntaxProviderMarker(SyntaxTriviaList triviaList)
+    {
+        foreach (var trivia in triviaList)
+        {
+            if (!trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) &&
+                !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+            {
+                continue;
+            }
+
+            if (trivia.ToFullString().Contains(IntentionalCreateSyntaxProviderMarker, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
