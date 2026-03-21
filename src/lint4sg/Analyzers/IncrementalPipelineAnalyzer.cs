@@ -442,9 +442,6 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         SemanticModel semanticModel
     )
     {
-        if (TryFindNestedTupleParameter(callback, semanticModel) is { } nestedTupleParameter)
-            return nestedTupleParameter;
-
         var body = callback.Body;
         var guidance = GetTupleProliferationGuidance(body, semanticModel);
         var nestedTuple = body
@@ -462,9 +459,10 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
             .FirstOrDefault(memberAccess =>
                 GetTupleNavigationDepth(memberAccess, semanticModel, callback) >= 2
             );
-        return deepNavigation == null
-            ? null
-            : new TupleProliferationDiagnostic(deepNavigation.GetLocation(), guidance);
+        if (deepNavigation != null)
+            return new TupleProliferationDiagnostic(deepNavigation.GetLocation(), guidance);
+
+        return TryFindNestedTupleParameter(callback, semanticModel);
     }
 
     private static TupleProliferationDiagnostic? TryFindNestedTupleParameter(
@@ -476,7 +474,7 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         {
             if (
                 semanticModel.GetDeclaredSymbol(parameterSyntax) is IParameterSymbol { Type: { } type }
-                && ContainsNestedTuple(type)
+                && ContainsTupleWithinTuple(type)
             )
             {
                 return new TupleProliferationDiagnostic(
@@ -536,25 +534,56 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
 
     private static bool HasSameTypeLeftRightBranches(ITypeSymbol type)
     {
-        if (type is not INamedTypeSymbol tupleType || !tupleType.IsTupleType)
+        var typeStack = new Stack<ITypeSymbol>();
+        typeStack.Push(type);
+
+        while (typeStack.Count > 0)
+        {
+            if (typeStack.Pop() is not INamedTypeSymbol { IsTupleType: true } tupleType)
+                continue;
+
+            var tupleElements = tupleType.TupleElements;
+            if (
+                tupleElements.Length >= 2
+                && SymbolEqualityComparer.Default.Equals(
+                    tupleElements[0].Type,
+                    tupleElements[1].Type
+                )
+            )
+            {
+                return true;
+            }
+
+            foreach (var tupleElement in tupleElements)
+            {
+                typeStack.Push(tupleElement.Type);
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ContainsTupleWithinTuple(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol { IsTupleType: true } rootTupleType)
             return false;
 
-        var tupleElements = tupleType.TupleElements;
-        if (
-            tupleElements.Length >= 2
-            && SymbolEqualityComparer.Default.Equals(tupleElements[0].Type, tupleElements[1].Type)
-        )
+        var typeStack = new Stack<ITypeSymbol>();
+        foreach (var tupleElement in rootTupleType.TupleElements)
         {
+            typeStack.Push(tupleElement.Type);
+        }
+
+        while (typeStack.Count > 0)
+        {
+            if (typeStack.Pop() is not INamedTypeSymbol { IsTupleType: true } tupleType)
+                continue;
+
             return true;
         }
 
-        return tupleElements.Any(tupleElement => HasSameTypeLeftRightBranches(tupleElement.Type));
+        return false;
     }
-
-    private static bool ContainsNestedTuple(ITypeSymbol type) =>
-        type is INamedTypeSymbol tupleType
-        && tupleType.IsTupleType
-        && tupleType.TupleElements.Any(tupleElement => tupleElement.Type is INamedTypeSymbol { IsTupleType: true });
 
     private static int GetTupleNavigationDepth(
         MemberAccessExpressionSyntax memberAccess,
