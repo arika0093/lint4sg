@@ -72,6 +72,11 @@ public class LSG017_LSG018_LSG019_LSG020_PipelineTests
                     System.Func<TSource, System.Threading.CancellationToken, bool> predicate)
                     => default;
 
+                public static IncrementalValueProvider<TSource> Where<TSource>(
+                    this IncrementalValueProvider<TSource> source,
+                    System.Func<TSource, System.Threading.CancellationToken, bool> predicate)
+                    => default;
+
                 public static IncrementalValueProvider<System.Collections.Immutable.ImmutableArray<TSource>> Collect<TSource>(
                     this IncrementalValuesProvider<TSource> source)
                     => default;
@@ -388,5 +393,217 @@ public class LSG017_LSG018_LSG019_LSG020_PipelineTests
             """;
 
         await RunTestAsync(code);
+    }
+
+    // ---- Fix 1: local const should not prevent a callback from being static ----
+
+    [Fact]
+    public async Task Select_NonStaticCallbackReferencingLocalConst_ReportsLSG017()
+    {
+        // Before the fix, CanBeStatic incorrectly returned false for const locals
+        // (treating them as captures), so LSG017 was NOT raised.  The correct
+        // behavior is to raise LSG017 because static lambdas may reference const
+        // locals, so adding `static` is always safe here.
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<int> values = default;
+                    const string suffix = ".g.cs";
+                    var projected = values.Select({|#0:(item, ct) => item.ToString() + suffix|});
+                }
+            }
+            """;
+
+        await RunTestAsync(
+            code,
+            new DiagnosticResult("LSG017", DiagnosticSeverity.Error).WithLocation(0)
+        );
+    }
+
+    [Fact]
+    public async Task Select_StaticCallbackReferencingLocalConst_DoesNotReportLSG017()
+    {
+        // A static callback that only references const locals is valid; no diagnostic.
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<int> values = default;
+                    const string suffix = ".g.cs";
+                    var projected = values.Select(static (item, ct) => item.ToString() + suffix);
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    // ---- Fix 2: domain-model Left/Right properties must not trigger LSG020 ----
+
+    [Fact]
+    public async Task DomainModelLeftRightProperties_DoesNotReportLSG020()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public class TreeNode
+            {
+                public TreeNode? Left { get; }
+                public TreeNode? Right { get; }
+            }
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<TreeNode> values = default;
+                    var projected = values.Select(static (node, ct) => node.Left != null ? node.Left.Left : node.Right);
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    // ---- Fix 3 (P2): method-group callbacks ----
+
+    [Fact]
+    public async Task Select_InstanceMethodGroup_ReportsLSG017()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                private string Project(int item, System.Threading.CancellationToken ct)
+                    => item.ToString();
+
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<int> values = default;
+                    var projected = values.Select({|#0:Project|});
+                }
+            }
+            """;
+
+        await RunTestAsync(
+            code,
+            new DiagnosticResult("LSG017", DiagnosticSeverity.Error).WithLocation(0)
+        );
+    }
+
+    [Fact]
+    public async Task Select_StaticMethodGroup_DoesNotReportLSG017()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                private static string Project(int item, System.Threading.CancellationToken ct)
+                    => item.ToString();
+
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<int> values = default;
+                    var projected = values.Select(Project);
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    // ---- Fix 4: aggregation foreach must not trigger LSG019 ----
+
+    [Fact]
+    public async Task CollectFollowedByAggregationForeach_DoesNotReportLSG019()
+    {
+        var code = """
+            using System.Collections.Immutable;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<int> values = default;
+                    var sum = values.Collect().Select(static (items, _) =>
+                    {
+                        var acc = 0;
+                        foreach (var i in items)
+                            acc += i;
+                        return acc;
+                    });
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    // ---- Fix 5: chained Collect().X.Select() should still report LSG019 ----
+
+    [Fact]
+    public async Task ChainedCollectThenSelect_ReportsLSG019OnCollect()
+    {
+        var code = """
+            using System.Collections.Immutable;
+            using System.Linq;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<int> values = default;
+                    // An intermediate Select that is a pass-through should not
+                    // confuse the producer detection: LSG019 must still point at Collect.
+                    var result = {|#0:values.Collect()|}
+                        .Select(static (items, ct) => items)
+                        .Select(static (items, ct) =>
+                            items.Where(static x => x > 0).ToImmutableArray());
+                }
+            }
+            """;
+
+        await RunTestAsync(
+            code,
+            new DiagnosticResult("LSG019", DiagnosticSeverity.Error).WithLocation(0)
+        );
+    }
+
+    [Fact]
+    public async Task ChainedCollectThenWhere_ReportsLSG019OnCollect()
+    {
+        var code = """
+            using System.Collections.Immutable;
+            using System.Linq;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<int> values = default;
+                    var collected = {|#0:values.Collect()|};
+                    var filtered = collected.Where(static (arr, ct) => arr.Length > 0);
+                    var result = filtered.Select(static (items, ct) =>
+                        items.Where(static x => x > 0).ToImmutableArray());
+                }
+            }
+            """;
+
+        await RunTestAsync(
+            code,
+            new DiagnosticResult("LSG019", DiagnosticSeverity.Error).WithLocation(0)
+        );
     }
 }

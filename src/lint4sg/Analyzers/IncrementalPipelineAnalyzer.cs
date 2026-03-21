@@ -126,6 +126,23 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
                 );
             }
         }
+
+        // Also check method-group callbacks for LSG017.
+        foreach (var expression in GetCallbackArgumentExpressions(invocation, methodName))
+        {
+            if (expression is AnonymousFunctionExpressionSyntax)
+                continue;
+
+            if (
+                GetReferencedSymbol(context.SemanticModel, expression)
+                is IMethodSymbol { IsStatic: false }
+            )
+            {
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG017, expression.GetLocation())
+                );
+            }
+        }
     }
 
     private static void AnalyzeCollectionFlow(
@@ -274,6 +291,34 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         }
     }
 
+    private static IEnumerable<ExpressionSyntax> GetCallbackArgumentExpressions(
+        InvocationExpressionSyntax invocation,
+        string methodName
+    )
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        return methodName switch
+        {
+            "CreateSyntaxProvider" => GetExpressionsAtIndices(arguments, 0, 1),
+            "ForAttributeWithMetadataName" => GetExpressionsAtIndices(arguments, 1, 2),
+            "RegisterSourceOutput" or "RegisterImplementationSourceOutput" =>
+                GetExpressionsAtIndices(arguments, 1),
+            _ => arguments.Select(argument => UnwrapExpression(argument.Expression)),
+        };
+    }
+
+    private static IEnumerable<ExpressionSyntax> GetExpressionsAtIndices(
+        SeparatedSyntaxList<ArgumentSyntax> arguments,
+        params int[] indices
+    )
+    {
+        foreach (var index in indices)
+        {
+            if (index < arguments.Count)
+                yield return UnwrapExpression(arguments[index].Expression);
+        }
+    }
+
     private static AnonymousFunctionExpressionSyntax? GetPrimaryCallback(
         InvocationExpressionSyntax invocation,
         string methodName
@@ -324,7 +369,11 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
 
             switch (symbol)
             {
-                case ILocalSymbol or IParameterSymbol or IRangeVariableSymbol:
+                case ILocalSymbol localSymbol:
+                    if (!localSymbol.IsConst && !IsDeclaredWithinCallback(symbol, callback))
+                        return false;
+                    break;
+                case IParameterSymbol or IRangeVariableSymbol:
                     if (!IsDeclaredWithinCallback(symbol, callback))
                         return false;
                     break;
@@ -469,6 +518,7 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         while (
             current is MemberAccessExpressionSyntax currentMemberAccess
             && currentMemberAccess.Name.Identifier.Text is "Left" or "Right"
+            && IsTupleElementAccess(currentMemberAccess, semanticModel)
         )
         {
             depth++;
@@ -486,6 +536,15 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         }
 
         return 0;
+    }
+
+    private static bool IsTupleElementAccess(
+        MemberAccessExpressionSyntax memberAccess,
+        SemanticModel semanticModel
+    )
+    {
+        var symbol = GetReferencedSymbol(semanticModel, memberAccess.Name);
+        return symbol is IFieldSymbol fieldSymbol && fieldSymbol.ContainingType.IsTupleType;
     }
 
     private static IParameterSymbol? GetCollectionParameterSymbol(
@@ -540,7 +599,10 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
 
         foreach (var foreachStatement in body.DescendantNodesAndSelf().OfType<ForEachStatementSyntax>())
         {
-            if (IsRootedInParameter(foreachStatement.Expression, collectionParameter, semanticModel))
+            if (
+                IsRootedInParameter(foreachStatement.Expression, collectionParameter, semanticModel)
+                && !IsAggregationForeach(foreachStatement)
+            )
                 return true;
         }
 
@@ -561,6 +623,27 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Returns true when a foreach loop body consists only of aggregation/reduction
+    /// operations (e.g. accumulating into a local variable) rather than per-item
+    /// projection, filtering, or side-effectful work.
+    /// </summary>
+    private static bool IsAggregationForeach(ForEachStatementSyntax foreachStatement)
+    {
+        // A foreach whose body contains expression-statement invocations (void method
+        // calls such as list.Add(item) or context.AddSource(...)) or yield statements
+        // is doing per-item work, not a pure aggregation.
+        foreach (var node in foreachStatement.Statement.DescendantNodesAndSelf())
+        {
+            if (node is ExpressionStatementSyntax { Expression: InvocationExpressionSyntax })
+                return false;
+            if (node is YieldStatementSyntax)
+                return false;
+        }
+
+        return true;
     }
 
     private static bool IsParameterReference(
@@ -662,6 +745,31 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         switch (expression)
         {
             case InvocationExpressionSyntax invocation:
+                // If the receiver of this invocation also yields a materialized-collection
+                // provider element type, this is an intermediate pass-through stage (e.g.
+                // Where/Select chained after Collect). Walk back to the actual producer.
+                if (invocation.Expression is MemberAccessExpressionSyntax chainedMemberAccess)
+                {
+                    var receiverType = semanticModel
+                        .GetTypeInfo(chainedMemberAccess.Expression)
+                        .Type;
+                    var receiverElementType = GetProviderElementType(receiverType);
+                    if (
+                        receiverElementType != null
+                        && IsMaterializedCollectionType(receiverElementType)
+                    )
+                    {
+                        var innerProducer = ResolveProducerInvocation(
+                            chainedMemberAccess.Expression,
+                            semanticModel,
+                            currentPosition,
+                            visitedSymbols
+                        );
+                        if (innerProducer != null)
+                            return innerProducer;
+                    }
+                }
+
                 return invocation;
             case IdentifierNameSyntax identifier
                 when GetReferencedSymbol(semanticModel, identifier) is ILocalSymbol localSymbol:
