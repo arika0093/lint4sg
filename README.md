@@ -79,6 +79,15 @@ var result = context.SyntaxProvider.ForAttributeWithMetadataName(
     transform: (ctx, ct) => (ClassDeclarationSyntax)ctx.Node);
 ```
 
+If you have a valid reason to use `CreateSyntaxProvider` (e.g. you need to analyze function call arguments which cannot be filtered by attributes), you can explicitly opt out of this rule.
+
+```csharp
+// lint4sg-allow-create-syntax-provider: (reason)
+var result = context.SyntaxProvider.CreateSyntaxProvider(
+    predicate: (node, ct) => node is ClassDeclarationSyntax,
+    transform: (ctx, ct) => (ClassDeclarationSyntax)ctx.Node);
+```
+
 Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md#use-forattributewithmetadataname)
 
 ---
