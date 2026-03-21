@@ -56,7 +56,7 @@ public class MyGenerator : ISourceGenerator { ... }
 public class MyGenerator : IIncrementalGenerator { ... }
 ```
 
-Source: [Incremental Generators design document](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.md)
+Source: [Roslyn Source Generators Document](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/source-generators.md)
 
 ---
 
@@ -79,7 +79,7 @@ var result = context.SyntaxProvider.ForAttributeWithMetadataName(
     transform: (ctx, ct) => (ClassDeclarationSyntax)ctx.Node);
 ```
 
-Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md), [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md#use-forattributewithmetadataname)
 
 ---
 
@@ -114,8 +114,7 @@ var result = context.SyntaxProvider.ForAttributeWithMetadataName(
         return symbol.BaseType?.Name == "MyBase" ? symbol : null;
     });
 ```
-
-Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md#do-not-scan-for-types-that-indirectly-implement-interfaces-indirectly-inherit-from-types-or-are-indirectly-marked-by-an-attribute-from-an-interface-or-base-type)
 
 ---
 
@@ -148,7 +147,7 @@ void Parse(CancellationToken ct)
 }
 ```
 
-Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
+Source: [Incremental Generators](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.md#handling-cancellation)
 
 ---
 
@@ -182,7 +181,7 @@ void Process(IEnumerable<ISymbol> symbols, CancellationToken ct)
 }
 ```
 
-Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
+Source: [Incremental Generators](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.md#handling-cancellation)
 
 ---
 
@@ -204,7 +203,7 @@ public record MyInfo(string Name, string FullName);
 context.RegisterSourceOutput(provider, (spc, info) => Generate(spc, info));
 ```
 
-Source: [Incremental Generators design document](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.md), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md#pipeline-model-design), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
 
 ---
 
@@ -232,7 +231,7 @@ Source: [Avoiding performance pitfalls in incremental generators](https://andrew
 
 The same equatability requirements from LSG006/LSG007 apply to the values returned by `ForAttributeWithMetadataName` and `CreateSyntaxProvider` transforms. If the transform returns a non-equatable type, Roslyn's caching will not work. This is a warning rather than an error because some unavoidable patterns exist.
 
-Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md#pipeline-model-design), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
 
 ---
 
@@ -252,7 +251,7 @@ writer.Indent++;
 writer.WriteLine("public class Foo { }");
 ```
 
-Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md#use-an-indented-text-writer-not-syntaxnodes-for-generation), [Roslyn Issue #52914](https://github.com/dotnet/roslyn/issues/52914#issuecomment-1739939379)
 
 ---
 
@@ -270,7 +269,7 @@ sb.AppendLine("        public void Method()");
 sb.AppendLine("public void Method()");
 ```
 
-Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md), [Roslyn Issue #52914](https://github.com/dotnet/roslyn/issues/52914#issuecomment-1739939379)
 
 ---
 
@@ -295,8 +294,6 @@ sb.Append($$"""
     """);
 ```
 
-Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
-
 ---
 
 ### LSG012
@@ -307,7 +304,7 @@ Source generators distributed as NuGet packages require all their transitive dep
 
 References that are intentionally source-only / analyzer-only and are marked with `PrivateAssets="all"` are allowed.
 
-Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
+Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md#use-functionality-from-nuget-packages)
 
 ---
 
@@ -317,7 +314,6 @@ Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/
 
 Using `System.Reflection` in a source generator (or generating code that uses reflection) defeats the purpose of compile-time code generation. Source generators should produce static code. When an LLM generates reflection-based code in a generator, this rule fires immediately to draw attention.
 
-Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
 
 ---
 
@@ -327,7 +323,7 @@ Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/
 
 A source generator that references a newer version of `Microsoft.CodeAnalysis.CSharp` will only run in IDEs and build tools that ship that version. Using a lower version (< 5.0.0 as of March 2026) maximises compatibility with older Visual Studio / Rider installations and CI agents.
 
-Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
+Source: [.NET compiler platform package version reference](https://learn.microsoft.com/en-us/visualstudio/extensibility/roslyn-version-support?view=visualstudio)
 
 ---
 
@@ -372,13 +368,6 @@ var result = context.SyntaxProvider.CreateSyntaxProvider(
     predicate: (node, ct) => node is ClassDeclarationSyntax,
     transform: (ctx, ct) => new[] { ctx });
 ```
-
-## References
-
-- [Roslyn Incremental Generators design document](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.md)
-- [Roslyn Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
-- [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/main/docs/features/incremental-generators.cookbook.md)
-- [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
 
 ## License
 
