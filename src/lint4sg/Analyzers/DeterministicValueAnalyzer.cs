@@ -528,10 +528,19 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
     )
     {
         return hasValueEquality
-            && containingType.TypeKind == TypeKind.Class
+            && HasHiddenCollectionStorageValueEquality(containingType)
             && IsCollectionLike(containingType)
             && member.DeclaredAccessibility == Accessibility.Private
             && IsCollectionStorageType(memberType);
+    }
+
+    private static bool HasHiddenCollectionStorageValueEquality(INamedTypeSymbol type)
+    {
+        if (type.TypeKind == TypeKind.Class)
+            return true;
+
+        return type.TypeKind == TypeKind.Struct
+            && (OverridesObjectEquals(type) || ImplementsIEquatableOfSelf(type));
     }
 
     private static bool IsCollectionStorageType(ITypeSymbol type)

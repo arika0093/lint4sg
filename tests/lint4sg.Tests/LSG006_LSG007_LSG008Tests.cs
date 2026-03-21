@@ -476,6 +476,41 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
     }
 
     [Fact]
+    public async Task CollectionLikeStructWithoutExplicitValueEquality_ReportsLSG007()
+    {
+        var code = """
+            using System.Collections;
+            using System.Collections.Generic;
+            using Microsoft.CodeAnalysis;
+
+            public struct Segments : IEnumerable<string>
+            {
+                private readonly List<string> _items;
+
+                public IEnumerator<string> GetEnumerator() => (_items ?? new List<string>()).GetEnumerator();
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<Segments> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, segments) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(
+            code,
+            new DiagnosticResult("LSG007", DiagnosticSeverity.Error)
+                .WithSpan(19, 9, 19, 67)
+                .WithArguments("System.Collections.Generic.List<string>")
+        );
+    }
+
+    [Fact]
     public async Task RecordWithEquatableImmutableArrayWrapper_NoLSG007()
     {
         var code = """
@@ -660,6 +695,54 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
                 public T this[int index] => _items[index];
 
                 public bool Equals(EquatableArray<T>? other) => other is not null && _items.SequenceEqual(other._items);
+                public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
+                public override int GetHashCode() => Count;
+
+                public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)_items).GetEnumerator();
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+
+            public record GeneratedSourceSetModel(EquatableArray<string> Sources);
+
+            public class MyGenerator
+            {
+                public void Run(SyntaxValueProvider provider)
+                {
+                    var result = provider.CreateSyntaxProvider<GeneratedSourceSetModel>(
+                        (node, ct) => true,
+                        (ctx, ct) => null!);
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
+    }
+
+    [Fact]
+    public async Task SyntaxProvider_RecordWithEquatableImmutableArrayStructWrapper_NoWarning()
+    {
+        var code = """
+            using System;
+            using System.Collections;
+            using System.Collections.Generic;
+            using System.Collections.Immutable;
+            using System.Linq;
+            using Microsoft.CodeAnalysis;
+
+            public readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IEnumerable<T>
+                where T : IEquatable<T>
+            {
+                private readonly ImmutableArray<T> _items;
+
+                public EquatableArray(ImmutableArray<T> items)
+                {
+                    _items = items;
+                }
+
+                public int Count => _items.Length;
+                public T this[int index] => _items[index];
+
+                public bool Equals(EquatableArray<T> other) => _items.SequenceEqual(other._items);
                 public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
                 public override int GetHashCode() => Count;
 
