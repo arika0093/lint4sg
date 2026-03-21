@@ -5,7 +5,7 @@ using Xunit;
 
 namespace lint4sg.Tests;
 
-public class LSG013_ReflectionApiTests
+public class LSG013_ReflectionApiAnalyzerTests
 {
     [Fact]
     public async Task UsingSystemReflection_ReportsLSG013()

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace lint4sg.Tests;
 
-public class LSG009_NormalizeWhitespaceTests
+public class LSG009_NormalizeWhitespaceAnalyzerTests
 {
     [Fact]
     public async Task NormalizeWhitespace_ReportsLSG009()

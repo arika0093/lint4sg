@@ -5,7 +5,7 @@ using Xunit;
 
 namespace lint4sg.Tests;
 
-public class LSG001_ISourceGeneratorTests
+public class LSG001_ISourceGeneratorUsageAnalyzerTests
 {
     [Fact]
     public async Task ClassImplementingISourceGenerator_ReportsLSG001()
