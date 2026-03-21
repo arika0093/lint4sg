@@ -62,6 +62,102 @@ public class LSG020_IncrementalPipelineAnalyzerTests
     }
 
     [Fact]
+    public async Task ChainedCombine_WithSameTypeCollectedInputs_ReportsMergeGuidance()
+    {
+        var code = """
+            using System.Collections.Immutable;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<int> first = default;
+                    IncrementalValuesProvider<int> second = default;
+                    IncrementalValuesProvider<int> third = default;
+                    var combined = first.Collect().Combine(second.Collect()).Combine(third.Collect());
+                    var projected = combined.Select(static ({|#0:value|}, ct) => value.Right);
+                }
+            }
+            """;
+
+        await IncrementalPipelineAnalyzerTestHelpers.RunTestAsync(
+            code,
+            new DiagnosticResult("LSG020", DiagnosticSeverity.Error)
+                .WithLocation(0)
+                .WithArguments(IncrementalPipelineAnalyzerTestHelpers.SameTypeTupleMergeGuidance)
+        );
+    }
+
+    [Fact]
+    public async Task ChainedCombine_WithDifferentCollectedInputs_ReportsGenericGuidance()
+    {
+        var code = """
+            using System.Collections.Immutable;
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValuesProvider<string> first = default;
+                    IncrementalValuesProvider<int> second = default;
+                    IncrementalValuesProvider<bool> third = default;
+                    var combined = first.Collect().Combine(second.Collect()).Combine(third.Collect());
+                    var projected = combined.Select(static ({|#0:value|}, ct) => value.Right);
+                }
+            }
+            """;
+
+        await IncrementalPipelineAnalyzerTestHelpers.RunTestAsync(
+            code,
+            new DiagnosticResult("LSG020", DiagnosticSeverity.Error)
+                .WithLocation(0)
+                .WithArguments(IncrementalPipelineAnalyzerTestHelpers.GenericTupleGuidance)
+        );
+    }
+
+    [Fact]
+    public async Task NestedTupleProviderInput_WithoutCombineChain_DoesNotReportLSG020()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValueProvider<((int X, int Y), string Label)> values = default;
+                    var projected = values.Select(static (value, ct) => value.Label.Length > 0);
+                }
+            }
+            """;
+
+        await IncrementalPipelineAnalyzerTestHelpers.RunTestAsync(code);
+    }
+
+    [Fact]
+    public async Task SingleCombine_WithExistingNestedTupleInput_DoesNotReportLSG020()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValueProvider<((int X, int Y), string Label)> left = default;
+                    IncrementalValueProvider<bool> right = default;
+                    var combined = left.Combine(right);
+                    var projected = combined.Select(static (value, ct) => value.Right);
+                }
+            }
+            """;
+
+        await IncrementalPipelineAnalyzerTestHelpers.RunTestAsync(code);
+    }
+
+    [Fact]
     public async Task MergeCollectedValuesStyleHelper_DoesNotReportLSG020()
     {
         var code = """

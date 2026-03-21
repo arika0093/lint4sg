@@ -106,6 +106,8 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         string methodName
     )
     {
+        var callbackSourceExpression = GetCallbackSourceExpression(invocation, methodName);
+
         foreach (var callback in GetCallbackExpressions(invocation, methodName))
         {
             if (!HasStaticModifier(callback) && CanBeStatic(callback, context.SemanticModel))
@@ -115,7 +117,15 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
                 );
             }
 
-            if (TryFindTupleProliferation(callback, context.SemanticModel) is { } tupleDiagnostic)
+            if (
+                callbackSourceExpression != null
+                && TryFindTupleProliferation(
+                    callback,
+                    context.SemanticModel,
+                    callbackSourceExpression,
+                    invocation.SpanStart
+                ) is { } tupleDiagnostic
+            )
             {
                 context.ReportDiagnostic(
                     Diagnostic.Create(
@@ -144,6 +154,18 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
             }
         }
     }
+
+    private static ExpressionSyntax? GetCallbackSourceExpression(
+        InvocationExpressionSyntax invocation,
+        string methodName
+    ) =>
+        methodName is "RegisterSourceOutput" or "RegisterImplementationSourceOutput"
+            ? invocation.ArgumentList.Arguments.Count > 0
+                ? invocation.ArgumentList.Arguments[0].Expression
+                : null
+            : invocation.Expression is MemberAccessExpressionSyntax memberAccess
+                ? memberAccess.Expression
+                : null;
 
     private static void AnalyzeCollectionFlow(
         SyntaxNodeAnalysisContext context,
@@ -439,7 +461,9 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
 
     private static TupleProliferationDiagnostic? TryFindTupleProliferation(
         AnonymousFunctionExpressionSyntax callback,
-        SemanticModel semanticModel
+        SemanticModel semanticModel,
+        ExpressionSyntax sourceExpression,
+        int currentPosition
     )
     {
         var body = callback.Body;
@@ -459,9 +483,51 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
             .FirstOrDefault(memberAccess =>
                 GetTupleNavigationDepth(memberAccess, semanticModel, callback) >= 2
             );
-        return deepNavigation == null
-            ? null
-            : new TupleProliferationDiagnostic(deepNavigation.GetLocation(), guidance);
+        if (deepNavigation != null)
+            return new TupleProliferationDiagnostic(deepNavigation.GetLocation(), guidance);
+
+        return TryFindNestedTupleParameter(
+            callback,
+            semanticModel,
+            sourceExpression,
+            currentPosition
+        );
+    }
+
+    private static TupleProliferationDiagnostic? TryFindNestedTupleParameter(
+        AnonymousFunctionExpressionSyntax callback,
+        SemanticModel semanticModel,
+        ExpressionSyntax sourceExpression,
+        int currentPosition
+    )
+    {
+        if (
+            GetCombineChainDepth(
+                sourceExpression,
+                semanticModel,
+                currentPosition,
+                new HashSet<ISymbol>(SymbolEqualityComparer.Default)
+            ) < 2
+        )
+        {
+            return null;
+        }
+
+        foreach (var parameterSyntax in GetParameterSyntaxes(callback))
+        {
+            if (
+                semanticModel.GetDeclaredSymbol(parameterSyntax) is IParameterSymbol { Type: { } type }
+                && ContainsTupleWithinTuple(type)
+            )
+            {
+                return new TupleProliferationDiagnostic(
+                    parameterSyntax.GetLocation(),
+                    GetTupleProliferationGuidance(type)
+                );
+            }
+        }
+
+        return null;
     }
 
     private static string GetTupleProliferationGuidance(
@@ -470,6 +536,9 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
     ) => HasSameTypeLeftRightBranches(node, semanticModel)
         ? SameTypeTupleMergeGuidance
         : GenericTupleGuidance;
+
+    private static string GetTupleProliferationGuidance(ITypeSymbol type) =>
+        HasSameTypeLeftRightBranches(type) ? SameTypeTupleMergeGuidance : GenericTupleGuidance;
 
     private static bool HasSameTypeLeftRightBranches(
         CSharpSyntaxNode node,
@@ -504,6 +573,124 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         }
 
         return false;
+    }
+
+    private static bool HasSameTypeLeftRightBranches(ITypeSymbol type)
+    {
+        var typeStack = new Stack<ITypeSymbol>();
+        typeStack.Push(type);
+
+        while (typeStack.Count > 0)
+        {
+            if (typeStack.Pop() is not INamedTypeSymbol { IsTupleType: true } tupleType)
+                continue;
+
+            var tupleElements = tupleType.TupleElements;
+            if (
+                tupleElements.Length >= 2
+                && SymbolEqualityComparer.Default.Equals(
+                    tupleElements[0].Type,
+                    tupleElements[1].Type
+                )
+            )
+            {
+                return true;
+            }
+
+            foreach (var tupleElement in tupleElements)
+            {
+                typeStack.Push(tupleElement.Type);
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ContainsTupleWithinTuple(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol { IsTupleType: true } rootTupleType)
+            return false;
+
+        var typeStack = new Stack<ITypeSymbol>();
+        foreach (var tupleElement in rootTupleType.TupleElements)
+        {
+            typeStack.Push(tupleElement.Type);
+        }
+
+        while (typeStack.Count > 0)
+        {
+            if (typeStack.Pop() is not INamedTypeSymbol { IsTupleType: true } tupleType)
+                continue;
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int GetCombineChainDepth(
+        ExpressionSyntax expression,
+        SemanticModel semanticModel,
+        int currentPosition,
+        HashSet<ISymbol> visitedSymbols
+    )
+    {
+        expression = UnwrapExpression(expression);
+
+        switch (expression)
+        {
+            case InvocationExpressionSyntax invocation
+                when invocation.Expression is MemberAccessExpressionSyntax memberAccess:
+                if (memberAccess.Name.Identifier.Text == "Combine")
+                {
+                    var receiverDepth = GetCombineChainDepth(
+                        memberAccess.Expression,
+                        semanticModel,
+                        currentPosition,
+                        visitedSymbols
+                    );
+                    var argumentDepth =
+                        invocation.ArgumentList.Arguments.Count > 0
+                            ? GetCombineChainDepth(
+                                invocation.ArgumentList.Arguments[0].Expression,
+                                semanticModel,
+                                currentPosition,
+                                visitedSymbols
+                            )
+                            : 0;
+                    return 1 + (receiverDepth > argumentDepth ? receiverDepth : argumentDepth);
+                }
+
+                return memberAccess.Name.Identifier.Text == "Where"
+                    ? GetCombineChainDepth(
+                        memberAccess.Expression,
+                        semanticModel,
+                        currentPosition,
+                        visitedSymbols
+                    )
+                    : 0;
+            case IdentifierNameSyntax identifier
+                when GetReferencedSymbol(semanticModel, identifier) is ILocalSymbol localSymbol:
+                if (!visitedSymbols.Add(localSymbol))
+                    return 0;
+
+                var assignedExpression = FindAssignedExpression(
+                    identifier,
+                    localSymbol,
+                    semanticModel,
+                    currentPosition
+                );
+                return assignedExpression == null
+                    ? 0
+                    : GetCombineChainDepth(
+                        assignedExpression,
+                        semanticModel,
+                        currentPosition,
+                        visitedSymbols
+                    );
+            default:
+                return 0;
+        }
     }
 
     private static int GetTupleNavigationDepth(
@@ -577,6 +764,20 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
                     && index < anonymousMethod.ParameterList.Parameters.Count =>
                 anonymousMethod.ParameterList.Parameters[index],
             _ => null,
+        };
+
+    private static IEnumerable<ParameterSyntax> GetParameterSyntaxes(
+        AnonymousFunctionExpressionSyntax callback
+    ) =>
+        callback switch
+        {
+            SimpleLambdaExpressionSyntax simpleLambda => [simpleLambda.Parameter],
+            ParenthesizedLambdaExpressionSyntax parenthesizedLambda => parenthesizedLambda
+                .ParameterList
+                .Parameters,
+            AnonymousMethodExpressionSyntax anonymousMethod
+                when anonymousMethod.ParameterList != null => anonymousMethod.ParameterList.Parameters,
+            _ => [],
         };
 
     private static bool ConsumesCollectionElementwise(
