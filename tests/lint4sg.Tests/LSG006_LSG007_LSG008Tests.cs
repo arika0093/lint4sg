@@ -476,6 +476,41 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
     }
 
     [Fact]
+    public async Task CollectionLikeStructWithoutExplicitValueEquality_ReportsLSG007()
+    {
+        var code = """
+            using System.Collections;
+            using System.Collections.Generic;
+            using Microsoft.CodeAnalysis;
+
+            public struct Segments : IEnumerable<string>
+            {
+                private readonly List<string> _items;
+
+                public IEnumerator<string> GetEnumerator() => (_items ?? new List<string>()).GetEnumerator();
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+
+            public class MyGenerator
+            {
+                public void Run(
+                    IncrementalGeneratorInitializationContext ctx,
+                    IncrementalValueProvider<Segments> provider)
+                {
+                    ctx.RegisterSourceOutput(provider, (spc, segments) => { });
+                }
+            }
+            """;
+
+        await RunTestAsync(
+            code,
+            new DiagnosticResult("LSG007", DiagnosticSeverity.Error)
+                .WithSpan(19, 9, 19, 67)
+                .WithArguments("System.Collections.Generic.List<string>")
+        );
+    }
+
+    [Fact]
     public async Task RecordWithEquatableImmutableArrayWrapper_NoLSG007()
     {
         var code = """
