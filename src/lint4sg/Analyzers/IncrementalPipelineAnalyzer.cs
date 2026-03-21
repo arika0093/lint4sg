@@ -106,6 +106,8 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         string methodName
     )
     {
+        var callbackSourceExpression = GetCallbackSourceExpression(invocation, methodName);
+
         foreach (var callback in GetCallbackExpressions(invocation, methodName))
         {
             if (!HasStaticModifier(callback) && CanBeStatic(callback, context.SemanticModel))
@@ -115,7 +117,15 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
                 );
             }
 
-            if (TryFindTupleProliferation(callback, context.SemanticModel) is { } tupleDiagnostic)
+            if (
+                callbackSourceExpression != null
+                && TryFindTupleProliferation(
+                    callback,
+                    context.SemanticModel,
+                    callbackSourceExpression,
+                    invocation.SpanStart
+                ) is { } tupleDiagnostic
+            )
             {
                 context.ReportDiagnostic(
                     Diagnostic.Create(
@@ -144,6 +154,18 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
             }
         }
     }
+
+    private static ExpressionSyntax? GetCallbackSourceExpression(
+        InvocationExpressionSyntax invocation,
+        string methodName
+    ) =>
+        methodName is "RegisterSourceOutput" or "RegisterImplementationSourceOutput"
+            ? invocation.ArgumentList.Arguments.Count > 0
+                ? invocation.ArgumentList.Arguments[0].Expression
+                : null
+            : invocation.Expression is MemberAccessExpressionSyntax memberAccess
+                ? memberAccess.Expression
+                : null;
 
     private static void AnalyzeCollectionFlow(
         SyntaxNodeAnalysisContext context,
@@ -439,7 +461,9 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
 
     private static TupleProliferationDiagnostic? TryFindTupleProliferation(
         AnonymousFunctionExpressionSyntax callback,
-        SemanticModel semanticModel
+        SemanticModel semanticModel,
+        ExpressionSyntax sourceExpression,
+        int currentPosition
     )
     {
         var body = callback.Body;
@@ -462,14 +486,33 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         if (deepNavigation != null)
             return new TupleProliferationDiagnostic(deepNavigation.GetLocation(), guidance);
 
-        return TryFindNestedTupleParameter(callback, semanticModel);
+        return TryFindNestedTupleParameter(
+            callback,
+            semanticModel,
+            sourceExpression,
+            currentPosition
+        );
     }
 
     private static TupleProliferationDiagnostic? TryFindNestedTupleParameter(
         AnonymousFunctionExpressionSyntax callback,
-        SemanticModel semanticModel
+        SemanticModel semanticModel,
+        ExpressionSyntax sourceExpression,
+        int currentPosition
     )
     {
+        if (
+            GetCombineChainDepth(
+                sourceExpression,
+                semanticModel,
+                currentPosition,
+                new HashSet<ISymbol>(SymbolEqualityComparer.Default)
+            ) < 2
+        )
+        {
+            return null;
+        }
+
         foreach (var parameterSyntax in GetParameterSyntaxes(callback))
         {
             if (
@@ -583,6 +626,71 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         }
 
         return false;
+    }
+
+    private static int GetCombineChainDepth(
+        ExpressionSyntax expression,
+        SemanticModel semanticModel,
+        int currentPosition,
+        HashSet<ISymbol> visitedSymbols
+    )
+    {
+        expression = UnwrapExpression(expression);
+
+        switch (expression)
+        {
+            case InvocationExpressionSyntax invocation
+                when invocation.Expression is MemberAccessExpressionSyntax memberAccess:
+                if (memberAccess.Name.Identifier.Text == "Combine")
+                {
+                    var receiverDepth = GetCombineChainDepth(
+                        memberAccess.Expression,
+                        semanticModel,
+                        currentPosition,
+                        visitedSymbols
+                    );
+                    var argumentDepth =
+                        invocation.ArgumentList.Arguments.Count > 0
+                            ? GetCombineChainDepth(
+                                invocation.ArgumentList.Arguments[0].Expression,
+                                semanticModel,
+                                currentPosition,
+                                visitedSymbols
+                            )
+                            : 0;
+                    return 1 + (receiverDepth > argumentDepth ? receiverDepth : argumentDepth);
+                }
+
+                return memberAccess.Name.Identifier.Text == "Where"
+                    ? GetCombineChainDepth(
+                        memberAccess.Expression,
+                        semanticModel,
+                        currentPosition,
+                        visitedSymbols
+                    )
+                    : 0;
+            case IdentifierNameSyntax identifier
+                when GetReferencedSymbol(semanticModel, identifier) is ILocalSymbol localSymbol:
+                if (!visitedSymbols.Add(localSymbol))
+                    return 0;
+
+                var assignedExpression = FindAssignedExpression(
+                    identifier,
+                    localSymbol,
+                    semanticModel,
+                    currentPosition
+                );
+                return assignedExpression == null
+                    ? 0
+                    : GetCombineChainDepth(
+                        assignedExpression,
+                        semanticModel,
+                        currentPosition,
+                        visitedSymbols
+                    );
+            default:
+                return 0;
+        }
     }
 
     private static int GetTupleNavigationDepth(

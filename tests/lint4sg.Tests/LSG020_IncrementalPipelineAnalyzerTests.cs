@@ -118,6 +118,46 @@ public class LSG020_IncrementalPipelineAnalyzerTests
     }
 
     [Fact]
+    public async Task NestedTupleProviderInput_WithoutCombineChain_DoesNotReportLSG020()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValueProvider<((int X, int Y), string Label)> values = default;
+                    var projected = values.Select(static (value, ct) => value.Label.Length > 0);
+                }
+            }
+            """;
+
+        await IncrementalPipelineAnalyzerTestHelpers.RunTestAsync(code);
+    }
+
+    [Fact]
+    public async Task SingleCombine_WithExistingNestedTupleInput_DoesNotReportLSG020()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValueProvider<((int X, int Y), string Label)> left = default;
+                    IncrementalValueProvider<bool> right = default;
+                    var combined = left.Combine(right);
+                    var projected = combined.Select(static (value, ct) => value.Right);
+                }
+            }
+            """;
+
+        await IncrementalPipelineAnalyzerTestHelpers.RunTestAsync(code);
+    }
+
+    [Fact]
     public async Task MergeCollectedValuesStyleHelper_DoesNotReportLSG020()
     {
         var code = """
