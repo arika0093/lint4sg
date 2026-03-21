@@ -7,12 +7,28 @@ A strict Roslyn analyzer that enforces best practices for **.NET Source Generato
 
 Source Generators have strict performance and correctness requirements that differ significantly from ordinary C# code. This analyzer catches common mistakes at compile time, acting as a safety net especially when AI coding assistants generate Source Generator code.
 
-## Installation
+## How to Use
+### Installation
 
 Add `lint4sg` as a project reference in your Source Generator project:
 
 ```bash
 dotnet add package lint4sg
+```
+
+### LLM prompts
+
+When using an LLM to generate source generator code, include the following instruction in your prompt to enable lint4sg checks:
+
+```
+Please apply the lint4sg analyzer to this Source Generator project.
+lint4sg is a strict Roslyn analyzer that detects patterns violating best practices for Source Generator code.
+To ensure code quality and performance, please adhere to lint4sg's rules. Warnings and errors will be displayed in the format LSGxxx.
+All warnings and errors must be addressed. For each issue, refer to the error message and the official README documentation for guidance on how to resolve it.
+
+nuget: https://www.nuget.org/packages/lint4sg/
+repository: https://github.com/arika0093/lint4sg
+readme: https://raw.githubusercontent.com/arika0093/lint4sg/refs/heads/main/README.md
 ```
 
 ## Analyzer Rules
