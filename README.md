@@ -311,6 +311,26 @@ Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/
 
 ---
 
+### LSG013
+
+**Avoid Reflection API in source generator** *(warning)*
+
+Using `System.Reflection` in a source generator (or generating code that uses reflection) defeats the purpose of compile-time code generation. Source generators should produce static code. When an LLM generates reflection-based code in a generator, this rule fires immediately to draw attention.
+
+Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
+
+---
+
+### LSG014
+
+**Microsoft.CodeAnalysis.CSharp version may be too new** *(warning)*
+
+A source generator that references a newer version of `Microsoft.CodeAnalysis.CSharp` will only run in IDEs and build tools that ship that version. Using a lower version (< 5.0.0 as of March 2026) maximises compatibility with older Visual Studio / Rider installations and CI agents.
+
+Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
+
+---
+
 ### LSG015
 
 **Avoid fully-indented raw string output**
@@ -352,28 +372,6 @@ var result = context.SyntaxProvider.CreateSyntaxProvider(
     predicate: (node, ct) => node is ClassDeclarationSyntax,
     transform: (ctx, ct) => new[] { ctx });
 ```
-
----
-
-### LSG013
-
-**Avoid Reflection API in source generator** *(warning)*
-
-Using `System.Reflection` in a source generator (or generating code that uses reflection) defeats the purpose of compile-time code generation. Source generators should produce static code. When an LLM generates reflection-based code in a generator, this rule fires immediately to draw attention.
-
-Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
-
----
-
-### LSG014
-
-**Microsoft.CodeAnalysis.CSharp version may be too new** *(warning)*
-
-A source generator that references a newer version of `Microsoft.CodeAnalysis.CSharp` will only run in IDEs and build tools that ship that version. Using a lower version (< 5.0.0 as of March 2026) maximises compatibility with older Visual Studio / Rider installations and CI agents.
-
-Source: [Source Generators overview](https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.md)
-
----
 
 ## References
 
