@@ -1,7 +1,7 @@
 using System.Threading.Tasks;
+using lint4sg.Analyzers;
 using Microsoft.CodeAnalysis.Testing;
 using Xunit;
-using lint4sg.Analyzers;
 
 namespace lint4sg.Tests;
 
@@ -21,8 +21,10 @@ public class LSG001_ISourceGeneratorTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG001", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(4, 28, 4, 44);
+        var expected = new DiagnosticResult(
+            "LSG001",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(4, 28, 4, 44);
 
         var test = TestHelpers.CreateTest<ISourceGeneratorUsageAnalyzer>(code, expected);
         await test.RunAsync();

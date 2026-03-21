@@ -15,7 +15,8 @@ namespace lint4sg.Analyzers;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
 {
-    private const string IntentionalCreateSyntaxProviderMarker = "lint4sg-allow-create-syntax-provider";
+    private const string IntentionalCreateSyntaxProviderMarker =
+        "lint4sg-allow-create-syntax-provider";
 
     // High-cost member access names that indicate inheritance/interface checking
     private static readonly ImmutableHashSet<string> HighCostMemberNames = ImmutableHashSet.Create(
@@ -33,7 +34,8 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         ImmutableArray.Create(
             DiagnosticDescriptors.LSG002,
             DiagnosticDescriptors.LSG003,
-            DiagnosticDescriptors.LSG016);
+            DiagnosticDescriptors.LSG016
+        );
 
     public override void Initialize(AnalysisContext context)
     {
@@ -71,8 +73,10 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         {
             var containingType = methodSymbol.ContainingType;
             // Check that this is Microsoft.CodeAnalysis.SyntaxValueProvider
-            if (containingType?.Name != "SyntaxValueProvider" ||
-                containingType.ContainingNamespace?.ToString() != "Microsoft.CodeAnalysis")
+            if (
+                containingType?.Name != "SyntaxValueProvider"
+                || containingType.ContainingNamespace?.ToString() != "Microsoft.CodeAnalysis"
+            )
             {
                 return;
             }
@@ -90,9 +94,9 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
             // LSG002: Warn about using CreateSyntaxProvider
             if (!HasIntentionalCreateSyntaxProviderMarker(invocation))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG002,
-                    invocation.GetLocation()));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG002, invocation.GetLocation())
+                );
             }
         }
 
@@ -104,9 +108,9 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
 
             foreach (var allocationNode in GetAllocationNodes(predicateArg))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG016,
-                    allocationNode.GetLocation()));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG016, allocationNode.GetLocation())
+                );
             }
 
             // LSG003: Check for expensive inheritance/interface/attribute scans.
@@ -116,9 +120,9 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
             // instead of pre-filtering (typically with ForAttributeWithMetadataName).
             if (isCreateSyntaxProvider && ContainsExpensivePredicateCheck(predicateArg))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG003,
-                    predicateArg.GetLocation()));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG003, predicateArg.GetLocation())
+                );
             }
         }
 
@@ -127,9 +131,9 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
             var transformArg = arguments[1];
             if (ContainsExpensiveTransformScan(arguments[0], transformArg))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG003,
-                    transformArg.GetLocation()));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG003, transformArg.GetLocation())
+                );
             }
         }
     }
@@ -160,7 +164,9 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    private static bool HasIntentionalCreateSyntaxProviderMarker(InvocationExpressionSyntax invocation)
+    private static bool HasIntentionalCreateSyntaxProviderMarker(
+        InvocationExpressionSyntax invocation
+    )
     {
         if (ContainsIntentionalCreateSyntaxProviderMarker(invocation.GetLeadingTrivia()))
             return true;
@@ -169,22 +175,30 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
             return true;
 
         var statement = invocation.AncestorsAndSelf().OfType<StatementSyntax>().FirstOrDefault();
-        return statement != null &&
-            (ContainsIntentionalCreateSyntaxProviderMarker(statement.GetLeadingTrivia()) ||
-             ContainsIntentionalCreateSyntaxProviderMarker(statement.GetTrailingTrivia()));
+        return statement != null
+            && (
+                ContainsIntentionalCreateSyntaxProviderMarker(statement.GetLeadingTrivia())
+                || ContainsIntentionalCreateSyntaxProviderMarker(statement.GetTrailingTrivia())
+            );
     }
 
     private static bool ContainsIntentionalCreateSyntaxProviderMarker(SyntaxTriviaList triviaList)
     {
         foreach (var trivia in triviaList)
         {
-            if (!trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) &&
-                !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+            if (
+                !trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                && !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)
+            )
             {
                 continue;
             }
 
-            if (trivia.ToFullString().Contains(IntentionalCreateSyntaxProviderMarker, StringComparison.Ordinal))
+            if (
+                trivia
+                    .ToFullString()
+                    .Contains(IntentionalCreateSyntaxProviderMarker, StringComparison.Ordinal)
+            )
             {
                 return true;
             }
@@ -196,18 +210,23 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
     private static bool ContainsExpensivePredicateCheck(SyntaxNode node) =>
         ContainsHighCostMemberAccess(node);
 
-    private static bool ContainsExpensiveTransformScan(SyntaxNode predicate, SyntaxNode transform) =>
-        IsBroadPredicate(predicate) &&
-        ContainsGetDeclaredSymbolInvocation(transform) &&
-        ContainsHighCostMemberAccess(transform);
+    private static bool ContainsExpensiveTransformScan(
+        SyntaxNode predicate,
+        SyntaxNode transform
+    ) =>
+        IsBroadPredicate(predicate)
+        && ContainsGetDeclaredSymbolInvocation(transform)
+        && ContainsHighCostMemberAccess(transform);
 
     private static bool ContainsGetDeclaredSymbolInvocation(SyntaxNode node)
     {
         foreach (var descendant in node.DescendantNodesAndSelf())
         {
-            if (descendant is InvocationExpressionSyntax invocation &&
-                invocation.Expression is MemberAccessExpressionSyntax memberAccess &&
-                memberAccess.Name.Identifier.Text == "GetDeclaredSymbol")
+            if (
+                descendant is InvocationExpressionSyntax invocation
+                && invocation.Expression is MemberAccessExpressionSyntax memberAccess
+                && memberAccess.Name.Identifier.Text == "GetDeclaredSymbol"
+            )
             {
                 return true;
             }
@@ -224,9 +243,10 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         {
             return lambda.Body switch
             {
-                BlockSyntax block => TryGetSingleReturnExpression(block) is { } expression && IsBroadPredicateExpression(expression),
+                BlockSyntax block => TryGetSingleReturnExpression(block) is { } expression
+                    && IsBroadPredicateExpression(expression),
                 ExpressionSyntax expression => IsBroadPredicateExpression(expression),
-                _ => false
+                _ => false,
             };
         }
 
@@ -239,14 +259,15 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
 
         return node switch
         {
-            LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.TrueLiteralExpression) => true,
+            LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.TrueLiteralExpression) =>
+                true,
             IsPatternExpressionSyntax => true,
             BinaryExpressionSyntax binary when binary.IsKind(SyntaxKind.IsExpression) => true,
             BinaryExpressionSyntax binary when binary.IsKind(SyntaxKind.LogicalAndExpression) =>
                 IsBroadPredicateExpression(binary.Left) && IsBroadPredicateExpression(binary.Right),
             ParenthesizedLambdaExpressionSyntax lambda => IsBroadPredicate(lambda),
             SimpleLambdaExpressionSyntax lambda => IsBroadPredicate(lambda),
-            _ => false
+            _ => false,
         };
     }
 
@@ -270,7 +291,10 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
 
     private static ExpressionSyntax? TryGetSingleReturnExpression(BlockSyntax block)
     {
-        if (block.Statements.Count == 1 && block.Statements[0] is ReturnStatementSyntax { Expression: { } returnExpression })
+        if (
+            block.Statements.Count == 1
+            && block.Statements[0] is ReturnStatementSyntax { Expression: { } returnExpression }
+        )
         {
             return returnExpression;
         }
@@ -293,7 +317,8 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
                 case InterpolatedStringExpressionSyntax:
                     yield return descendant;
                     break;
-                case InvocationExpressionSyntax invocation when IsKnownAllocatingInvocation(invocation):
+                case InvocationExpressionSyntax invocation
+                    when IsKnownAllocatingInvocation(invocation):
                     yield return invocation;
                     break;
             }
@@ -306,7 +331,7 @@ public sealed class SyntaxProviderUsageAnalyzer : DiagnosticAnalyzer
         {
             MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text,
             IdentifierNameSyntax identifier => identifier.Identifier.Text,
-            _ => null
+            _ => null,
         };
 
         return name is "ToArray" or "ToList" or "ToDictionary" or "ToHashSet";

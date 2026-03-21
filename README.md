@@ -332,6 +332,19 @@ Using `System.Reflection` in a source generator (or generating code that uses re
 
 A source generator that references a newer version of `Microsoft.CodeAnalysis.CSharp` will only run in IDEs and build tools that ship that version. Using a lower version (< 5.0.0 as of March 2026) maximises compatibility with older Visual Studio / Rider installations and CI agents.
 
+Also, while we cannot directly warn about this, if you are using dependabot, we recommend explicitly excluding it from updates.
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "Microsoft.CodeAnalysis.*"
+```
+
 Source: [.NET compiler platform package version reference](https://learn.microsoft.com/en-us/visualstudio/extensibility/roslyn-version-support?view=visualstudio)
 
 ---

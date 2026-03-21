@@ -97,15 +97,13 @@ internal static class TestHelpers
     /// <summary>Creates an analyzer test with the standard stubs pre-included.</summary>
     public static CSharpAnalyzerTest<TAnalyzer, XUnitVerifier> CreateTest<TAnalyzer>(
         string sourceCode,
-        params DiagnosticResult[] expectedDiagnostics)
+        params DiagnosticResult[] expectedDiagnostics
+    )
         where TAnalyzer : DiagnosticAnalyzer, new()
     {
         var test = new CSharpAnalyzerTest<TAnalyzer, XUnitVerifier>
         {
-            TestState =
-            {
-                Sources = { sourceCode, RoslynStubs, GeneratorAttributeStub },
-            }
+            TestState = { Sources = { sourceCode, RoslynStubs, GeneratorAttributeStub } },
         };
 
         test.TestState.ExpectedDiagnostics.AddRange(expectedDiagnostics);

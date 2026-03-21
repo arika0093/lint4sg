@@ -1,7 +1,7 @@
 using System.Threading.Tasks;
+using lint4sg.Analyzers;
 using Microsoft.CodeAnalysis.Testing;
 using Xunit;
-using lint4sg.Analyzers;
 
 namespace lint4sg.Tests;
 
@@ -40,13 +40,15 @@ public class LSG004_LSG005_CancellationTokenTests
             }
             """;
 
-        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code,
+        var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(
+            code,
             new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
                 .WithSpan(14, 20, 14, 25)
                 .WithArguments("Parse"),
             new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
                 .WithSpan(19, 20, 19, 27)
-                .WithArguments("Analyze"));
+                .WithArguments("Analyze")
+        );
 
         await test.RunAsync();
     }
@@ -74,7 +76,10 @@ public class LSG004_LSG005_CancellationTokenTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG004", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+        var expected = new DiagnosticResult(
+            "LSG004",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        )
             .WithSpan(13, 20, 13, 25)
             .WithArguments("Parse");
 
@@ -106,8 +111,10 @@ public class LSG004_LSG005_CancellationTokenTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(16, 16, 16, 37);
+        var expected = new DiagnosticResult(
+            "LSG005",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(16, 16, 16, 37);
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
@@ -142,8 +149,10 @@ public class LSG004_LSG005_CancellationTokenTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(17, 9, 19, 10);
+        var expected = new DiagnosticResult(
+            "LSG005",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(17, 9, 19, 10);
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
@@ -238,8 +247,10 @@ public class LSG004_LSG005_CancellationTokenTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(16, 16, 16, 25);
+        var expected = new DiagnosticResult(
+            "LSG005",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(16, 16, 16, 25);
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
@@ -274,8 +285,10 @@ public class LSG004_LSG005_CancellationTokenTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(16, 16, 16, 47);
+        var expected = new DiagnosticResult(
+            "LSG005",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(16, 16, 16, 47);
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();
@@ -312,8 +325,10 @@ public class LSG004_LSG005_CancellationTokenTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG005", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(18, 9, 21, 10);
+        var expected = new DiagnosticResult(
+            "LSG005",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(18, 9, 21, 10);
 
         var test = TestHelpers.CreateTest<CancellationTokenAnalyzer>(code, expected);
         await test.RunAsync();

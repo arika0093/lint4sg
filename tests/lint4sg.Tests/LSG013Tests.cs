@@ -1,7 +1,7 @@
 using System.Threading.Tasks;
+using lint4sg.Analyzers;
 using Microsoft.CodeAnalysis.Testing;
 using Xunit;
-using lint4sg.Analyzers;
 
 namespace lint4sg.Tests;
 
@@ -21,7 +21,10 @@ public class LSG013_ReflectionApiTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG013", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected = new DiagnosticResult(
+            "LSG013",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+        )
             .WithSpan(1, 1, 1, 25)
             .WithArguments("System.Reflection");
 
@@ -42,7 +45,10 @@ public class LSG013_ReflectionApiTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG013", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected = new DiagnosticResult(
+            "LSG013",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+        )
             .WithSpan(5, 16, 5, 42)
             .WithArguments("System.Reflection");
 
@@ -63,8 +69,10 @@ public class LSG013_ReflectionApiTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG013", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
-            .WithSpan(5, 16, 5, 42);
+        var expected = new DiagnosticResult(
+            "LSG013",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+        ).WithSpan(5, 16, 5, 42);
 
         var test = TestHelpers.CreateTest<ReflectionApiAnalyzer>(code, expected);
         await test.RunAsync();

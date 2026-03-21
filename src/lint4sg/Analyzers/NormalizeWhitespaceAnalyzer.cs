@@ -47,9 +47,9 @@ public sealed class NormalizeWhitespaceAnalyzer : DiagnosticAnalyzer
             var ns = containingType.ContainingNamespace?.ToString();
             if (ns != null && ns.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG009,
-                    invocation.GetLocation()));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG009, invocation.GetLocation())
+                );
             }
         }
     }

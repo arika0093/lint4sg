@@ -29,13 +29,15 @@ public sealed class ISourceGeneratorUsageAnalyzer : DiagnosticAnalyzer
 
         // Check if the base type is ISourceGenerator
         var symbol = context.SemanticModel.GetSymbolInfo(typeName).Symbol;
-        if (symbol is INamedTypeSymbol namedType &&
-            namedType.Name == "ISourceGenerator" &&
-            namedType.ContainingNamespace?.ToString() == "Microsoft.CodeAnalysis")
+        if (
+            symbol is INamedTypeSymbol namedType
+            && namedType.Name == "ISourceGenerator"
+            && namedType.ContainingNamespace?.ToString() == "Microsoft.CodeAnalysis"
+        )
         {
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.LSG001,
-                baseType.GetLocation()));
+            context.ReportDiagnostic(
+                Diagnostic.Create(DiagnosticDescriptors.LSG001, baseType.GetLocation())
+            );
         }
     }
 }

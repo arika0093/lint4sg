@@ -1,7 +1,7 @@
 using System.Threading.Tasks;
+using lint4sg.Analyzers;
 using Microsoft.CodeAnalysis.Testing;
 using Xunit;
-using lint4sg.Analyzers;
 
 namespace lint4sg.Tests;
 
@@ -26,8 +26,10 @@ public class LSG002_LSG003_SyntaxProviderTests
             """;
 
         // LSG002 fires for CreateSyntaxProvider usage
-        var expected = new DiagnosticResult("LSG002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
-            .WithSpan(8, 22, 10, 30);
+        var expected = new DiagnosticResult(
+            "LSG002",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+        ).WithSpan(8, 22, 10, 30);
 
         var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code, expected);
         await test.RunAsync();
@@ -125,11 +127,17 @@ public class LSG002_LSG003_SyntaxProviderTests
             """;
 
         // Both LSG002 (warning) and LSG003 (error for BaseType check in predicate)
-        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code,
-            new DiagnosticResult("LSG002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
-                .WithSpan(8, 22, 10, 30),
-            new DiagnosticResult("LSG003", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-                .WithSpan(9, 13, 9, 58));
+        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(
+            code,
+            new DiagnosticResult(
+                "LSG002",
+                Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+            ).WithSpan(8, 22, 10, 30),
+            new DiagnosticResult(
+                "LSG003",
+                Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+            ).WithSpan(9, 13, 9, 58)
+        );
 
         await test.RunAsync();
     }
@@ -152,11 +160,17 @@ public class LSG002_LSG003_SyntaxProviderTests
             }
             """;
 
-        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code,
-            new DiagnosticResult("LSG002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
-                .WithSpan(8, 22, 10, 30),
-            new DiagnosticResult("LSG016", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-                .WithSpan(9, 27, 9, 39));
+        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(
+            code,
+            new DiagnosticResult(
+                "LSG002",
+                Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+            ).WithSpan(8, 22, 10, 30),
+            new DiagnosticResult(
+                "LSG016",
+                Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+            ).WithSpan(9, 27, 9, 39)
+        );
 
         await test.RunAsync();
     }
@@ -180,9 +194,13 @@ public class LSG002_LSG003_SyntaxProviderTests
             }
             """;
 
-        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code,
-            new DiagnosticResult("LSG016", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-                .WithSpan(10, 27, 10, 41));
+        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(
+            code,
+            new DiagnosticResult(
+                "LSG016",
+                Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+            ).WithSpan(10, 27, 10, 41)
+        );
 
         await test.RunAsync();
     }
@@ -236,11 +254,17 @@ public class LSG002_LSG003_SyntaxProviderTests
             }
             """;
 
-        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code,
-            new DiagnosticResult("LSG002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
-                .WithSpan(9, 22, 11, 88),
-            new DiagnosticResult("LSG003", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-                .WithSpan(11, 13, 11, 87));
+        var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(
+            code,
+            new DiagnosticResult(
+                "LSG002",
+                Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+            ).WithSpan(9, 22, 11, 88),
+            new DiagnosticResult(
+                "LSG003",
+                Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+            ).WithSpan(11, 13, 11, 87)
+        );
 
         await test.RunAsync();
     }
@@ -276,8 +300,10 @@ public class LSG002_LSG003_SyntaxProviderTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
-            .WithSpan(9, 22, 11, 88);
+        var expected = new DiagnosticResult(
+            "LSG002",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+        ).WithSpan(9, 22, 11, 88);
 
         var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code, expected);
         await test.RunAsync();
@@ -304,8 +330,10 @@ public class LSG002_LSG003_SyntaxProviderTests
             """;
 
         // Only LSG002 should be reported — NOT LSG003 for the transform
-        var expected = new DiagnosticResult("LSG002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
-            .WithSpan(8, 22, 10, 49);
+        var expected = new DiagnosticResult(
+            "LSG002",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+        ).WithSpan(8, 22, 10, 49);
 
         var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code, expected);
         await test.RunAsync();
@@ -337,8 +365,10 @@ public class LSG002_LSG003_SyntaxProviderTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
-            .WithSpan(9, 22, 11, 84);
+        var expected = new DiagnosticResult(
+            "LSG002",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
+        ).WithSpan(9, 22, 11, 84);
 
         var test = TestHelpers.CreateTest<SyntaxProviderUsageAnalyzer>(code, expected);
         await test.RunAsync();

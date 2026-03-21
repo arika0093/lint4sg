@@ -15,10 +15,12 @@ namespace lint4sg.Analyzers;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
 {
-    private static readonly ImmutableHashSet<string> AllowedPackagePrefixes = ImmutableHashSet.Create(
-        StringComparer.OrdinalIgnoreCase,
-        "Microsoft.CodeAnalysis",
-        "Microsoft.Net.Compilers");
+    private static readonly ImmutableHashSet<string> AllowedPackagePrefixes =
+        ImmutableHashSet.Create(
+            StringComparer.OrdinalIgnoreCase,
+            "Microsoft.CodeAnalysis",
+            "Microsoft.Net.Compilers"
+        );
 
     private const string CodeAnalysisCSharpPackage = "Microsoft.CodeAnalysis.CSharp";
     private static readonly Version MaxRecommendedVersion = new(5, 0, 0);
@@ -54,7 +56,8 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
         AdditionalFileAnalysisContext context,
         string text,
         SourceText sourceText,
-        string filePath)
+        string filePath
+    )
     {
         // Parse the project file as XML so that multi-line PackageReference elements
         // (where attributes or child elements span multiple lines) are handled correctly.
@@ -78,10 +81,11 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
             // Version may be an XML attribute OR a child element, e.g.:
             //   <PackageReference Include="Foo" Version="1.0" />
             //   <PackageReference Include="Foo"><Version>1.0</Version></PackageReference>
-            var packageVersion = (string?)element.Attribute("Version")
-                                 ?? element.Element("Version")?.Value;
-            var privateAssets = (string?)element.Attribute("PrivateAssets")
-                                ?? element.Element("PrivateAssets")?.Value;
+            var packageVersion =
+                (string?)element.Attribute("Version") ?? element.Element("Version")?.Value;
+            var privateAssets =
+                (string?)element.Attribute("PrivateAssets")
+                ?? element.Element("PrivateAssets")?.Value;
 
             // Map the element's start line back to a SourceText span for diagnostics.
             var lineInfo = element as IXmlLineInfo;
@@ -89,15 +93,23 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
             var location = GetLineSpan(sourceText, lineIndex, filePath);
 
             // LSG014: Microsoft.CodeAnalysis.CSharp version >= 5.0.0
-            if (string.Equals(packageName, CodeAnalysisCSharpPackage, StringComparison.OrdinalIgnoreCase)
-                && packageVersion != null)
+            if (
+                string.Equals(
+                    packageName,
+                    CodeAnalysisCSharpPackage,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && packageVersion != null
+            )
             {
-                if (TryParseVersion(packageVersion, out var version) && version >= MaxRecommendedVersion)
+                if (
+                    TryParseVersion(packageVersion, out var version)
+                    && version >= MaxRecommendedVersion
+                )
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG014,
-                        location,
-                        packageVersion));
+                    context.ReportDiagnostic(
+                        Diagnostic.Create(DiagnosticDescriptors.LSG014, location, packageVersion)
+                    );
                 }
             }
 
@@ -114,10 +126,9 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
 
             if (!isAllowed && !ContainsAllPrivateAssets(privateAssets))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG012,
-                    location,
-                    packageName));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG012, location, packageName)
+                );
             }
         }
     }
@@ -152,7 +163,9 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
                 line.Span,
                 new LinePositionSpan(
                     new LinePosition(lineIndex, 0),
-                    new LinePosition(lineIndex, line.Span.Length)));
+                    new LinePosition(lineIndex, line.Span.Length)
+                )
+            );
         }
         return Location.None;
     }

@@ -21,6 +21,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
     // Matches 8 or more consecutive spaces
     private static readonly Regex ExcessiveSpacesPattern = new(@" {8,}", RegexOptions.Compiled);
+
     // Matches 2 or more consecutive tabs
     private static readonly Regex ExcessiveTabsPattern = new(@"\t{2,}", RegexOptions.Compiled);
 
@@ -28,14 +29,18 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         ImmutableArray.Create(
             DiagnosticDescriptors.LSG010,
             DiagnosticDescriptors.LSG011,
-            DiagnosticDescriptors.LSG015);
+            DiagnosticDescriptors.LSG015
+        );
 
     public override void Initialize(AnalysisContext context)
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
         context.RegisterSyntaxNodeAction(AnalyzeBlock, SyntaxKind.Block);
-        context.RegisterSyntaxNodeAction(AnalyzeInvocationForWhitespace, SyntaxKind.InvocationExpression);
+        context.RegisterSyntaxNodeAction(
+            AnalyzeInvocationForWhitespace,
+            SyntaxKind.InvocationExpression
+        );
     }
 
     private static void AnalyzeInvocationForWhitespace(SyntaxNodeAnalysisContext context)
@@ -65,18 +70,20 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         {
             if (IsFullyIndentedRawString(stringValue))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG015,
-                    invocation.GetLocation()));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG015, invocation.GetLocation())
+                );
             }
             return;
         }
 
-        if (ExcessiveSpacesPattern.IsMatch(stringValue) || ExcessiveTabsPattern.IsMatch(stringValue))
+        if (
+            ExcessiveSpacesPattern.IsMatch(stringValue) || ExcessiveTabsPattern.IsMatch(stringValue)
+        )
         {
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.LSG010,
-                invocation.GetLocation()));
+            context.ReportDiagnostic(
+                Diagnostic.Create(DiagnosticDescriptors.LSG010, invocation.GetLocation())
+            );
         }
     }
 
@@ -90,7 +97,8 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeConsecutiveAppendLines(
         SyntaxNodeAnalysisContext context,
-        SyntaxList<StatementSyntax> statements)
+        SyntaxList<StatementSyntax> statements
+    )
     {
         int consecutiveCount = 0;
         StatementSyntax? firstStatement = null;
@@ -107,10 +115,13 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             {
                 if (consecutiveCount >= MinConsecutiveAppendLines && firstStatement != null)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.LSG011,
-                        firstStatement.GetLocation(),
-                        consecutiveCount));
+                    context.ReportDiagnostic(
+                        Diagnostic.Create(
+                            DiagnosticDescriptors.LSG011,
+                            firstStatement.GetLocation(),
+                            consecutiveCount
+                        )
+                    );
                 }
                 consecutiveCount = 0;
                 firstStatement = null;
@@ -120,10 +131,13 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         // Check at end
         if (consecutiveCount >= MinConsecutiveAppendLines && firstStatement != null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.LSG011,
-                firstStatement.GetLocation(),
-                consecutiveCount));
+            context.ReportDiagnostic(
+                Diagnostic.Create(
+                    DiagnosticDescriptors.LSG011,
+                    firstStatement.GetLocation(),
+                    consecutiveCount
+                )
+            );
         }
     }
 
@@ -168,18 +182,18 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         if (expr is LiteralExpressionSyntax literal)
         {
             var token = literal.Token;
-            return token.IsKind(SyntaxKind.MultiLineRawStringLiteralToken) ||
-                   token.IsKind(SyntaxKind.SingleLineRawStringLiteralToken) ||
-                   token.IsKind(SyntaxKind.InterpolatedSingleLineRawStringStartToken) ||
-                   token.IsKind(SyntaxKind.InterpolatedMultiLineRawStringStartToken);
+            return token.IsKind(SyntaxKind.MultiLineRawStringLiteralToken)
+                || token.IsKind(SyntaxKind.SingleLineRawStringLiteralToken)
+                || token.IsKind(SyntaxKind.InterpolatedSingleLineRawStringStartToken)
+                || token.IsKind(SyntaxKind.InterpolatedMultiLineRawStringStartToken);
         }
 
         // Also check for interpolated raw strings
         if (expr is InterpolatedStringExpressionSyntax interpolated)
         {
             var startToken = interpolated.StringStartToken;
-            return startToken.IsKind(SyntaxKind.InterpolatedSingleLineRawStringStartToken) ||
-                   startToken.IsKind(SyntaxKind.InterpolatedMultiLineRawStringStartToken);
+            return startToken.IsKind(SyntaxKind.InterpolatedSingleLineRawStringStartToken)
+                || startToken.IsKind(SyntaxKind.InterpolatedMultiLineRawStringStartToken);
         }
 
         return false;
@@ -187,8 +201,10 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
     private static string? GetStringValue(ExpressionSyntax expr)
     {
-        if (expr is LiteralExpressionSyntax literal &&
-            literal.IsKind(SyntaxKind.StringLiteralExpression))
+        if (
+            expr is LiteralExpressionSyntax literal
+            && literal.IsKind(SyntaxKind.StringLiteralExpression)
+        )
         {
             return literal.Token.ValueText;
         }
@@ -216,7 +232,6 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             .Where(static line => !string.IsNullOrWhiteSpace(line))
             .ToArray();
 
-        return lines.Length > 1 &&
-               lines.All(static line => char.IsWhiteSpace(line[0]));
+        return lines.Length > 1 && lines.All(static line => char.IsWhiteSpace(line[0]));
     }
 }

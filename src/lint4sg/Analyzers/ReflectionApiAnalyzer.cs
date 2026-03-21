@@ -17,7 +17,8 @@ public sealed class ReflectionApiAnalyzer : DiagnosticAnalyzer
         StringComparer.Ordinal,
         "System.Reflection",
         "System.Reflection.Emit",
-        "System.Reflection.Metadata");
+        "System.Reflection.Metadata"
+    );
 
     private static readonly ImmutableHashSet<string> ReflectionTypeNames = ImmutableHashSet.Create(
         StringComparer.Ordinal,
@@ -37,7 +38,8 @@ public sealed class ReflectionApiAnalyzer : DiagnosticAnalyzer
         "BindingFlags",
         "Binder",
         "MethodBase",
-        "CustomAttributeData");
+        "CustomAttributeData"
+    );
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(DiagnosticDescriptors.LSG013);
@@ -48,7 +50,10 @@ public sealed class ReflectionApiAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
         context.RegisterSyntaxNodeAction(AnalyzeUsingDirective, SyntaxKind.UsingDirective);
         context.RegisterSyntaxNodeAction(AnalyzeStringLiteral, SyntaxKind.StringLiteralExpression);
-        context.RegisterSyntaxNodeAction(AnalyzeInterpolatedString, SyntaxKind.InterpolatedStringExpression);
+        context.RegisterSyntaxNodeAction(
+            AnalyzeInterpolatedString,
+            SyntaxKind.InterpolatedStringExpression
+        );
     }
 
     private static void AnalyzeUsingDirective(SyntaxNodeAnalysisContext context)
@@ -61,13 +66,18 @@ public sealed class ReflectionApiAnalyzer : DiagnosticAnalyzer
 
         foreach (var reflectionNs in ReflectionNamespaces)
         {
-            if (namespaceName == reflectionNs ||
-                namespaceName.StartsWith(reflectionNs + ".", StringComparison.Ordinal))
+            if (
+                namespaceName == reflectionNs
+                || namespaceName.StartsWith(reflectionNs + ".", StringComparison.Ordinal)
+            )
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG013,
-                    usingDirective.GetLocation(),
-                    namespaceName));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(
+                        DiagnosticDescriptors.LSG013,
+                        usingDirective.GetLocation(),
+                        namespaceName
+                    )
+                );
                 return;
             }
         }
@@ -97,18 +107,17 @@ public sealed class ReflectionApiAnalyzer : DiagnosticAnalyzer
     private static void CheckStringForReflection(
         SyntaxNodeAnalysisContext context,
         string value,
-        Location location)
+        Location location
+    )
     {
         // Check for reflection namespace usage in generated code
         foreach (var reflectionNs in ReflectionNamespaces)
         {
-            if (value.Contains("using " + reflectionNs) ||
-                value.Contains(reflectionNs + "."))
+            if (value.Contains("using " + reflectionNs) || value.Contains(reflectionNs + "."))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG013,
-                    location,
-                    reflectionNs));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG013, location, reflectionNs)
+                );
                 return;
             }
         }
@@ -117,18 +126,19 @@ public sealed class ReflectionApiAnalyzer : DiagnosticAnalyzer
         foreach (var typeName in ReflectionTypeNames)
         {
             // Check for type.GetType(), Assembly.GetExecutingAssembly() etc.
-            if (value.Contains("." + typeName + "(") ||
-                value.Contains(typeName + ".") ||
-                value.Contains(".GetType()") ||
-                value.Contains(".GetMethod(") ||
-                value.Contains(".GetProperty(") ||
-                value.Contains(".GetField(") ||
-                value.Contains(".GetConstructor("))
+            if (
+                value.Contains("." + typeName + "(")
+                || value.Contains(typeName + ".")
+                || value.Contains(".GetType()")
+                || value.Contains(".GetMethod(")
+                || value.Contains(".GetProperty(")
+                || value.Contains(".GetField(")
+                || value.Contains(".GetConstructor(")
+            )
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.LSG013,
-                    location,
-                    typeName));
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.LSG013, location, typeName)
+                );
                 return;
             }
         }

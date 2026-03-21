@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using lint4sg.Analyzers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
@@ -6,7 +7,6 @@ using Microsoft.CodeAnalysis.Testing;
 using Microsoft.CodeAnalysis.Testing.Verifiers;
 #pragma warning restore CS0618
 using Xunit;
-using lint4sg.Analyzers;
 
 namespace lint4sg.Tests;
 
@@ -74,7 +74,7 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
     {
         var test = new CSharpAnalyzerTest<DeterministicValueAnalyzer, XUnitVerifier>
         {
-            TestState = { Sources = { code, IncrementalStubs, IsExternalInitStub } }
+            TestState = { Sources = { code, IncrementalStubs, IsExternalInitStub } },
         };
         test.TestState.ExpectedDiagnostics.AddRange(expected);
         return test.RunAsync();
@@ -99,10 +99,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
                 .WithSpan(9, 9, 9, 62)
-                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol")
+        );
     }
 
     [Fact]
@@ -122,10 +124,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
                 .WithSpan(9, 9, 9, 61)
-                .WithArguments("Microsoft.CodeAnalysis.SemanticModel"));
+                .WithArguments("Microsoft.CodeAnalysis.SemanticModel")
+        );
     }
 
     [Fact]
@@ -145,10 +149,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
                 .WithSpan(9, 9, 9, 63)
-                .WithArguments("Microsoft.CodeAnalysis.Compilation"));
+                .WithArguments("Microsoft.CodeAnalysis.Compilation")
+        );
     }
 
     [Fact]
@@ -173,10 +179,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
                 .WithSpan(14, 9, 14, 60)
-                .WithArguments("MyData"));
+                .WithArguments("MyData")
+        );
     }
 
     [Fact]
@@ -248,10 +256,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
                 .WithSpan(24, 9, 24, 63)
-                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol")
+        );
     }
 
     [Fact]
@@ -286,10 +296,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
                 .WithSpan(24, 9, 24, 63)
-                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol")
+        );
     }
 
     // ── LSG006: non-deterministic type inside record (child / grandchild) ─
@@ -313,10 +325,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
                 .WithSpan(11, 9, 11, 63)
-                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol")
+        );
     }
 
     [Fact]
@@ -339,10 +353,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG006", DiagnosticSeverity.Error)
                 .WithSpan(12, 9, 12, 60)
-                .WithArguments("Microsoft.CodeAnalysis.Compilation"));
+                .WithArguments("Microsoft.CodeAnalysis.Compilation")
+        );
     }
 
     [Fact]
@@ -386,10 +402,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG007", DiagnosticSeverity.Error)
                 .WithSpan(9, 9, 9, 62)
-                .WithArguments("string[]"));
+                .WithArguments("string[]")
+        );
     }
 
     [Fact]
@@ -410,10 +428,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG007", DiagnosticSeverity.Error)
                 .WithSpan(10, 9, 10, 63)
-                .WithArguments("System.Collections.Generic.List<string>"));
+                .WithArguments("System.Collections.Generic.List<string>")
+        );
     }
 
     [Fact]
@@ -520,10 +540,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
                 .WithSpan(7, 22, 9, 32)
-                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol")
+        );
     }
 
     [Fact]
@@ -545,10 +567,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
                 .WithSpan(9, 22, 11, 32)
-                .WithArguments("Microsoft.CodeAnalysis.SemanticModel"));
+                .WithArguments("Microsoft.CodeAnalysis.SemanticModel")
+        );
     }
 
     [Fact]
@@ -583,10 +607,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
                 .WithSpan(22, 22, 24, 32)
-                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol")
+        );
     }
 
     [Fact]
@@ -677,10 +703,12 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
             }
             """;
 
-        await RunTestAsync(code,
+        await RunTestAsync(
+            code,
             new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
                 .WithSpan(8, 22, 11, 34)
-                .WithArguments("Microsoft.CodeAnalysis.ISymbol"));
+                .WithArguments("Microsoft.CodeAnalysis.ISymbol")
+        );
     }
 
     [Fact]

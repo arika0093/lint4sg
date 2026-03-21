@@ -18,45 +18,49 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
     private static readonly ImmutableHashSet<string> RegisterMethods = ImmutableHashSet.Create(
         StringComparer.Ordinal,
         "RegisterSourceOutput",
-        "RegisterImplementationSourceOutput");
+        "RegisterImplementationSourceOutput"
+    );
 
-    private static readonly ImmutableHashSet<string> SyntaxProviderMethods = ImmutableHashSet.Create(
-        StringComparer.Ordinal,
-        "CreateSyntaxProvider",
-        "ForAttributeWithMetadataName");
+    private static readonly ImmutableHashSet<string> SyntaxProviderMethods =
+        ImmutableHashSet.Create(
+            StringComparer.Ordinal,
+            "CreateSyntaxProvider",
+            "ForAttributeWithMetadataName"
+        );
 
     // Non-deterministic types that should not be passed to RegisterSourceOutput
-    private static readonly ImmutableHashSet<string> NonDeterministicTypeNames = ImmutableHashSet.Create(
-        StringComparer.Ordinal,
-        "ISymbol",
-        "SyntaxNode",
-        "SemanticModel",
-        "Compilation",
-        "INamedTypeSymbol",
-        "IMethodSymbol",
-        "IPropertySymbol",
-        "IFieldSymbol",
-        "IEventSymbol",
-        "IParameterSymbol",
-        "ITypeSymbol",
-        "ITypeParameterSymbol",
-        "IAssemblySymbol",
-        "IModuleSymbol",
-        "INamespaceSymbol",
-        "ILocalSymbol",
-        "ILabelSymbol",
-        "IRangeVariableSymbol",
-        "IDiscardSymbol",
-        "IFunctionPointerTypeSymbol",
-        "IPointerTypeSymbol",
-        "IDynamicTypeSymbol",
-        "IArrayTypeSymbol",
-        "CompilationUnitSyntax",
-        "ClassDeclarationSyntax",
-        "MethodDeclarationSyntax",
-        "PropertyDeclarationSyntax",
-        "AttributeSyntax"
-    );
+    private static readonly ImmutableHashSet<string> NonDeterministicTypeNames =
+        ImmutableHashSet.Create(
+            StringComparer.Ordinal,
+            "ISymbol",
+            "SyntaxNode",
+            "SemanticModel",
+            "Compilation",
+            "INamedTypeSymbol",
+            "IMethodSymbol",
+            "IPropertySymbol",
+            "IFieldSymbol",
+            "IEventSymbol",
+            "IParameterSymbol",
+            "ITypeSymbol",
+            "ITypeParameterSymbol",
+            "IAssemblySymbol",
+            "IModuleSymbol",
+            "INamespaceSymbol",
+            "ILocalSymbol",
+            "ILabelSymbol",
+            "IRangeVariableSymbol",
+            "IDiscardSymbol",
+            "IFunctionPointerTypeSymbol",
+            "IPointerTypeSymbol",
+            "IDynamicTypeSymbol",
+            "IArrayTypeSymbol",
+            "CompilationUnitSyntax",
+            "ClassDeclarationSyntax",
+            "MethodDeclarationSyntax",
+            "PropertyDeclarationSyntax",
+            "AttributeSyntax"
+        );
 
     // Collection types that use reference equality
     private static readonly ImmutableHashSet<string> CollectionTypeNames = ImmutableHashSet.Create(
@@ -68,13 +72,15 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         "ICollection",
         "IReadOnlyCollection",
         "IEnumerable",
-        "Array");
+        "Array"
+    );
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(
             DiagnosticDescriptors.LSG006,
             DiagnosticDescriptors.LSG007,
-            DiagnosticDescriptors.LSG008);
+            DiagnosticDescriptors.LSG008
+        );
 
     public override void Initialize(AnalysisContext context)
     {
@@ -104,7 +110,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeRegisterSourceOutput(
         SyntaxNodeAnalysisContext context,
-        InvocationExpressionSyntax invocation)
+        InvocationExpressionSyntax invocation
+    )
     {
         var args = invocation.ArgumentList.Arguments;
         if (args.Count < 1)
@@ -117,13 +124,19 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         if (type == null)
             return;
 
-        CheckTypeForNonDeterminism(context, type, invocation.GetLocation(), isRegisterMethod: true,
-            ImmutableHashSet<string>.Empty);
+        CheckTypeForNonDeterminism(
+            context,
+            type,
+            invocation.GetLocation(),
+            isRegisterMethod: true,
+            ImmutableHashSet<string>.Empty
+        );
     }
 
     private static void AnalyzeSyntaxProviderReturn(
         SyntaxNodeAnalysisContext context,
-        InvocationExpressionSyntax invocation)
+        InvocationExpressionSyntax invocation
+    )
     {
         var typeInfo = context.SemanticModel.GetTypeInfo(invocation);
         var type = typeInfo.Type ?? typeInfo.ConvertedType;
@@ -131,9 +144,14 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         if (type == null)
             return;
 
-        if (type is INamedTypeSymbol namedType &&
-            namedType.IsGenericType &&
-            (namedType.Name == "IncrementalValueProvider" || namedType.Name == "IncrementalValuesProvider"))
+        if (
+            type is INamedTypeSymbol namedType
+            && namedType.IsGenericType
+            && (
+                namedType.Name == "IncrementalValueProvider"
+                || namedType.Name == "IncrementalValuesProvider"
+            )
+        )
         {
             if (namedType.TypeArguments.Length > 0)
             {
@@ -141,7 +159,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
                     context,
                     namedType.TypeArguments[0],
                     invocation.GetLocation(),
-                    ImmutableHashSet<string>.Empty);
+                    ImmutableHashSet<string>.Empty
+                );
             }
         }
     }
@@ -150,7 +169,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         SyntaxNodeAnalysisContext context,
         ITypeSymbol type,
         Location location,
-        ImmutableHashSet<string> visitedTypeIds)
+        ImmutableHashSet<string> visitedTypeIds
+    )
     {
         switch (type)
         {
@@ -159,17 +179,19 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
                     context,
                     arrayType.ElementType,
                     location,
-                    visitedTypeIds);
+                    visitedTypeIds
+                );
                 return;
-            case INamedTypeSymbol namedType when namedType.IsGenericType &&
-                                                CollectionTypeNames.Contains(namedType.Name):
+            case INamedTypeSymbol namedType
+                when namedType.IsGenericType && CollectionTypeNames.Contains(namedType.Name):
                 foreach (var typeArgument in namedType.TypeArguments)
                 {
                     CheckSyntaxProviderElementTypeForNonDeterminism(
                         context,
                         typeArgument,
                         location,
-                        visitedTypeIds);
+                        visitedTypeIds
+                    );
                 }
                 return;
         }
@@ -179,7 +201,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             type,
             location,
             isRegisterMethod: false,
-            visitedTypeIds);
+            visitedTypeIds
+        );
     }
 
     private static void CheckTypeForNonDeterminism(
@@ -187,12 +210,18 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         ITypeSymbol type,
         Location location,
         bool isRegisterMethod,
-        ImmutableHashSet<string> visitedTypeIds)
+        ImmutableHashSet<string> visitedTypeIds
+    )
     {
         // Unwrap IncrementalValueProvider<T> / IncrementalValuesProvider<T>
-        if (type is INamedTypeSymbol namedTypeOuter &&
-            namedTypeOuter.IsGenericType &&
-            (namedTypeOuter.Name == "IncrementalValueProvider" || namedTypeOuter.Name == "IncrementalValuesProvider"))
+        if (
+            type is INamedTypeSymbol namedTypeOuter
+            && namedTypeOuter.IsGenericType
+            && (
+                namedTypeOuter.Name == "IncrementalValueProvider"
+                || namedTypeOuter.Name == "IncrementalValuesProvider"
+            )
+        )
         {
             if (namedTypeOuter.TypeArguments.Length > 0)
                 type = namedTypeOuter.TypeArguments[0];
@@ -203,9 +232,11 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
         // Primitive/runtime special types are deterministic by themselves, so we can stop here.
         // Strings are handled later because they are the common reference-type exception.
-        if (type.SpecialType != SpecialType.None &&
-            type.SpecialType != SpecialType.System_String &&
-            type.TypeKind != TypeKind.Struct)
+        if (
+            type.SpecialType != SpecialType.None
+            && type.SpecialType != SpecialType.System_String
+            && type.TypeKind != TypeKind.Struct
+        )
         {
             return;
         }
@@ -213,25 +244,46 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         // Arrays -> LSG007 / LSG008
         if (type is IArrayTypeSymbol)
         {
-            ReportDiagnostic(context, location, isRegisterMethod,
-                DiagnosticDescriptors.LSG007, DiagnosticDescriptors.LSG008, fullTypeName);
+            ReportDiagnostic(
+                context,
+                location,
+                isRegisterMethod,
+                DiagnosticDescriptors.LSG007,
+                DiagnosticDescriptors.LSG008,
+                fullTypeName
+            );
             return;
         }
 
         // Well-known collection types -> LSG007 / LSG008
-        if (type is INamedTypeSymbol collType && collType.IsGenericType &&
-            CollectionTypeNames.Contains(collType.Name))
+        if (
+            type is INamedTypeSymbol collType
+            && collType.IsGenericType
+            && CollectionTypeNames.Contains(collType.Name)
+        )
         {
-            ReportDiagnostic(context, location, isRegisterMethod,
-                DiagnosticDescriptors.LSG007, DiagnosticDescriptors.LSG008, fullTypeName);
+            ReportDiagnostic(
+                context,
+                location,
+                isRegisterMethod,
+                DiagnosticDescriptors.LSG007,
+                DiagnosticDescriptors.LSG008,
+                fullTypeName
+            );
             return;
         }
 
         // Well-known non-deterministic type names -> LSG006 / LSG008
         if (NonDeterministicTypeNames.Contains(typeName))
         {
-            ReportDiagnostic(context, location, isRegisterMethod,
-                DiagnosticDescriptors.LSG006, DiagnosticDescriptors.LSG008, fullTypeName);
+            ReportDiagnostic(
+                context,
+                location,
+                isRegisterMethod,
+                DiagnosticDescriptors.LSG006,
+                DiagnosticDescriptors.LSG008,
+                fullTypeName
+            );
             return;
         }
 
@@ -239,13 +291,21 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             return;
 
         // Implements ISymbol or derives from SyntaxNode/SemanticModel/Compilation -> LSG006 / LSG008
-        if (ImplementsInterface(checkType, "ISymbol", "Microsoft.CodeAnalysis") ||
-            DerivesFrom(checkType, "SyntaxNode", "Microsoft.CodeAnalysis") ||
-            DerivesFrom(checkType, "SemanticModel", "Microsoft.CodeAnalysis") ||
-            DerivesFrom(checkType, "Compilation", "Microsoft.CodeAnalysis"))
+        if (
+            ImplementsInterface(checkType, "ISymbol", "Microsoft.CodeAnalysis")
+            || DerivesFrom(checkType, "SyntaxNode", "Microsoft.CodeAnalysis")
+            || DerivesFrom(checkType, "SemanticModel", "Microsoft.CodeAnalysis")
+            || DerivesFrom(checkType, "Compilation", "Microsoft.CodeAnalysis")
+        )
         {
-            ReportDiagnostic(context, location, isRegisterMethod,
-                DiagnosticDescriptors.LSG006, DiagnosticDescriptors.LSG008, fullTypeName);
+            ReportDiagnostic(
+                context,
+                location,
+                isRegisterMethod,
+                DiagnosticDescriptors.LSG006,
+                DiagnosticDescriptors.LSG008,
+                fullTypeName
+            );
             return;
         }
 
@@ -254,8 +314,14 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         // Collection-like types that are not known to have stable value semantics -> LSG007 / LSG008
         if (IsCollectionLike(checkType) && !hasValueEquality)
         {
-            ReportDiagnostic(context, location, isRegisterMethod,
-                DiagnosticDescriptors.LSG007, DiagnosticDescriptors.LSG008, fullTypeName);
+            ReportDiagnostic(
+                context,
+                location,
+                isRegisterMethod,
+                DiagnosticDescriptors.LSG007,
+                DiagnosticDescriptors.LSG008,
+                fullTypeName
+            );
             return;
         }
 
@@ -269,7 +335,13 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         if (checkType.IsTupleType)
         {
             foreach (var element in checkType.TupleElements)
-                CheckTypeForNonDeterminism(context, element.Type, location, isRegisterMethod, updatedVisited);
+                CheckTypeForNonDeterminism(
+                    context,
+                    element.Type,
+                    location,
+                    isRegisterMethod,
+                    updatedVisited
+                );
             return;
         }
 
@@ -277,13 +349,25 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         if (checkType.IsGenericType)
         {
             foreach (var typeArg in checkType.TypeArguments)
-                CheckTypeForNonDeterminism(context, typeArg, location, isRegisterMethod, updatedVisited);
+                CheckTypeForNonDeterminism(
+                    context,
+                    typeArg,
+                    location,
+                    isRegisterMethod,
+                    updatedVisited
+                );
         }
 
         if (checkType.IsReferenceType && !hasValueEquality)
         {
-            ReportDiagnostic(context, location, isRegisterMethod,
-                DiagnosticDescriptors.LSG006, DiagnosticDescriptors.LSG008, fullTypeName);
+            ReportDiagnostic(
+                context,
+                location,
+                isRegisterMethod,
+                DiagnosticDescriptors.LSG006,
+                DiagnosticDescriptors.LSG008,
+                fullTypeName
+            );
             return;
         }
 
@@ -300,7 +384,7 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
                 {
                     IPropertySymbol prop when !prop.IsStatic => prop.Type,
                     IFieldSymbol field when !field.IsStatic => field.Type,
-                    _ => null
+                    _ => null,
                 };
                 if (memberType != null)
                 {
@@ -311,11 +395,18 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
                             memberType,
                             location,
                             isRegisterMethod,
-                            updatedVisited);
+                            updatedVisited
+                        );
                         continue;
                     }
 
-                    CheckTypeForNonDeterminism(context, memberType, location, isRegisterMethod, updatedVisited);
+                    CheckTypeForNonDeterminism(
+                        context,
+                        memberType,
+                        location,
+                        isRegisterMethod,
+                        updatedVisited
+                    );
                 }
             }
         }
@@ -327,28 +418,42 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         bool isRegisterMethod,
         DiagnosticDescriptor registerDescriptor,
         DiagnosticDescriptor syntaxProviderDescriptor,
-        string fullTypeName)
+        string fullTypeName
+    )
     {
-        context.ReportDiagnostic(Diagnostic.Create(
-            isRegisterMethod ? registerDescriptor : syntaxProviderDescriptor,
-            location,
-            fullTypeName));
+        context.ReportDiagnostic(
+            Diagnostic.Create(
+                isRegisterMethod ? registerDescriptor : syntaxProviderDescriptor,
+                location,
+                fullTypeName
+            )
+        );
     }
 
-    private static bool ImplementsInterface(INamedTypeSymbol type, string interfaceName, string namespaceName)
+    private static bool ImplementsInterface(
+        INamedTypeSymbol type,
+        string interfaceName,
+        string namespaceName
+    )
     {
         return type.AllInterfaces.Any(i =>
-            i.Name == interfaceName &&
-            i.ContainingNamespace?.ToString() == namespaceName);
+            i.Name == interfaceName && i.ContainingNamespace?.ToString() == namespaceName
+        );
     }
 
-    private static bool DerivesFrom(INamedTypeSymbol type, string baseTypeName, string namespaceName)
+    private static bool DerivesFrom(
+        INamedTypeSymbol type,
+        string baseTypeName,
+        string namespaceName
+    )
     {
         var current = type.BaseType;
         while (current != null)
         {
-            if (current.Name == baseTypeName &&
-                current.ContainingNamespace?.ToString() == namespaceName)
+            if (
+                current.Name == baseTypeName
+                && current.ContainingNamespace?.ToString() == namespaceName
+            )
                 return true;
             current = current.BaseType;
         }
@@ -360,16 +465,25 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         if (type.SpecialType == SpecialType.System_String)
             return false;
 
-        if (type.Name == "ImmutableArray" &&
-            type.ContainingNamespace?.ToString() == "System.Collections.Immutable")
+        if (
+            type.Name == "ImmutableArray"
+            && type.ContainingNamespace?.ToString() == "System.Collections.Immutable"
+        )
         {
             return true;
         }
 
         return type.AllInterfaces.Any(i =>
-            i.Name is "IEnumerable" or "ICollection" or "IList" or "IReadOnlyCollection" or "IReadOnlyList" &&
-            i.ContainingNamespace != null &&
-            i.ContainingNamespace.ToDisplayString().StartsWith("System.Collections", StringComparison.Ordinal));
+            i.Name
+                is "IEnumerable"
+                    or "ICollection"
+                    or "IList"
+                    or "IReadOnlyCollection"
+                    or "IReadOnlyList"
+            && i.ContainingNamespace != null
+            && i.ContainingNamespace.ToDisplayString()
+                .StartsWith("System.Collections", StringComparison.Ordinal)
+        );
     }
 
     private static bool HasValueEquality(INamedTypeSymbol type)
@@ -391,34 +505,33 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         return type.GetMembers("Equals")
             .OfType<IMethodSymbol>()
             .Any(m =>
-                m is
-                {
-                    IsOverride: true,
-                    Parameters.Length: 1
-                } &&
-                m.Parameters[0].Type.SpecialType == SpecialType.System_Object);
+                m is { IsOverride: true, Parameters.Length: 1 }
+                && m.Parameters[0].Type.SpecialType == SpecialType.System_Object
+            );
     }
 
     private static bool ImplementsIEquatableOfSelf(INamedTypeSymbol type)
     {
         return type.AllInterfaces.Any(i =>
-            i.Name == "IEquatable" &&
-            i.ContainingNamespace?.ToString() == "System" &&
-            i is { TypeArguments.Length: 1 } &&
-            SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], type));
+            i.Name == "IEquatable"
+            && i.ContainingNamespace?.ToString() == "System"
+            && i is { TypeArguments.Length: 1 }
+            && SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], type)
+        );
     }
 
     private static bool IsHiddenCollectionStorage(
         ISymbol member,
         ITypeSymbol memberType,
         bool hasValueEquality,
-        INamedTypeSymbol containingType)
+        INamedTypeSymbol containingType
+    )
     {
-        return hasValueEquality &&
-            containingType.TypeKind == TypeKind.Class &&
-            IsCollectionLike(containingType) &&
-            member.DeclaredAccessibility == Accessibility.Private &&
-            IsCollectionStorageType(memberType);
+        return hasValueEquality
+            && containingType.TypeKind == TypeKind.Class
+            && IsCollectionLike(containingType)
+            && member.DeclaredAccessibility == Accessibility.Private
+            && IsCollectionStorageType(memberType);
     }
 
     private static bool IsCollectionStorageType(ITypeSymbol type)
@@ -429,8 +542,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         if (type is not INamedTypeSymbol namedType)
             return false;
 
-        return (namedType.IsGenericType && CollectionTypeNames.Contains(namedType.Name)) ||
-            IsCollectionLike(namedType);
+        return (namedType.IsGenericType && CollectionTypeNames.Contains(namedType.Name))
+            || IsCollectionLike(namedType);
     }
 
     private static void CheckContainedTypeArgumentsForNonDeterminism(
@@ -438,11 +551,18 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         ITypeSymbol type,
         Location location,
         bool isRegisterMethod,
-        ImmutableHashSet<string> visitedTypeIds)
+        ImmutableHashSet<string> visitedTypeIds
+    )
     {
         if (type is IArrayTypeSymbol arrayType)
         {
-            CheckTypeForNonDeterminism(context, arrayType.ElementType, location, isRegisterMethod, visitedTypeIds);
+            CheckTypeForNonDeterminism(
+                context,
+                arrayType.ElementType,
+                location,
+                isRegisterMethod,
+                visitedTypeIds
+            );
             return;
         }
 
@@ -451,8 +571,13 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
         foreach (var typeArgument in namedType.TypeArguments)
         {
-            CheckTypeForNonDeterminism(context, typeArgument, location, isRegisterMethod, visitedTypeIds);
+            CheckTypeForNonDeterminism(
+                context,
+                typeArgument,
+                location,
+                isRegisterMethod,
+                visitedTypeIds
+            );
         }
     }
-
 }

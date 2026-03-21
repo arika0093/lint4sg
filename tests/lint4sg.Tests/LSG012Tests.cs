@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using lint4sg.Analyzers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
@@ -6,7 +7,6 @@ using Microsoft.CodeAnalysis.Testing;
 using Microsoft.CodeAnalysis.Testing.Verifiers;
 #pragma warning restore CS0618
 using Xunit;
-using lint4sg.Analyzers;
 
 namespace lint4sg.Tests;
 
@@ -18,15 +18,16 @@ public class LSG012_ProjectFileTests
 {
     private static Task RunProjectFileTestAsync(
         string csprojContent,
-        params DiagnosticResult[] expected)
+        params DiagnosticResult[] expected
+    )
     {
         var test = new CSharpAnalyzerTest<ProjectFileAnalyzer, XUnitVerifier>
         {
             TestState =
             {
                 Sources = { "// placeholder" },
-                AdditionalFiles = { ("test.csproj", csprojContent) }
-            }
+                AdditionalFiles = { ("test.csproj", csprojContent) },
+            },
         };
         test.TestState.ExpectedDiagnostics.AddRange(expected);
         return test.RunAsync();
@@ -44,10 +45,12 @@ public class LSG012_ProjectFileTests
             </Project>
             """;
 
-        await RunProjectFileTestAsync(csproj,
+        await RunProjectFileTestAsync(
+            csproj,
             new DiagnosticResult("LSG012", DiagnosticSeverity.Warning)
                 .WithSpan("test.csproj", 3, 1, 3, 68)
-                .WithArguments("Newtonsoft.Json"));
+                .WithArguments("Newtonsoft.Json")
+        );
     }
 
     [Fact]
@@ -109,13 +112,15 @@ public class LSG012_ProjectFileTests
             </Project>
             """;
 
-        await RunProjectFileTestAsync(csproj,
+        await RunProjectFileTestAsync(
+            csproj,
             new DiagnosticResult("LSG012", DiagnosticSeverity.Warning)
                 .WithSpan("test.csproj", 3, 1, 3, 59)
                 .WithArguments("Serilog"),
             new DiagnosticResult("LSG012", DiagnosticSeverity.Warning)
                 .WithSpan("test.csproj", 4, 1, 4, 63)
-                .WithArguments("AutoMapper"));
+                .WithArguments("AutoMapper")
+        );
     }
 
     [Fact]
@@ -144,10 +149,12 @@ public class LSG012_ProjectFileTests
             </Project>
             """;
 
-        await RunProjectFileTestAsync(csproj,
+        await RunProjectFileTestAsync(
+            csproj,
             new DiagnosticResult("LSG014", DiagnosticSeverity.Warning)
                 .WithSpan("test.csproj", 3, 1, 3, 81)
-                .WithArguments("5.0.0"));
+                .WithArguments("5.0.0")
+        );
     }
 
     [Fact]
@@ -181,10 +188,12 @@ public class LSG012_ProjectFileTests
             </Project>
             """;
 
-        await RunProjectFileTestAsync(csproj,
+        await RunProjectFileTestAsync(
+            csproj,
             new DiagnosticResult("LSG012", DiagnosticSeverity.Warning)
                 .WithSpan("test.csproj", 3, 1, 3, 49)
-                .WithArguments("Newtonsoft.Json"));
+                .WithArguments("Newtonsoft.Json")
+        );
     }
 
     [Fact]
@@ -202,9 +211,11 @@ public class LSG012_ProjectFileTests
             </Project>
             """;
 
-        await RunProjectFileTestAsync(csproj,
+        await RunProjectFileTestAsync(
+            csproj,
             new DiagnosticResult("LSG014", DiagnosticSeverity.Warning)
                 .WithSpan("test.csproj", 3, 1, 3, 63)
-                .WithArguments("5.0.0"));
+                .WithArguments("5.0.0")
+        );
     }
 }

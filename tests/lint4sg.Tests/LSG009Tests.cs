@@ -1,7 +1,7 @@
 using System.Threading.Tasks;
+using lint4sg.Analyzers;
 using Microsoft.CodeAnalysis.Testing;
 using Xunit;
-using lint4sg.Analyzers;
 
 namespace lint4sg.Tests;
 
@@ -22,8 +22,10 @@ public class LSG009_NormalizeWhitespaceTests
             }
             """;
 
-        var expected = new DiagnosticResult("LSG009", Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            .WithSpan(7, 16, 7, 42);
+        var expected = new DiagnosticResult(
+            "LSG009",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(7, 16, 7, 42);
 
         var test = TestHelpers.CreateTest<NormalizeWhitespaceAnalyzer>(code, expected);
         await test.RunAsync();

@@ -5,6 +5,7 @@ namespace lint4sg;
 internal static class DiagnosticDescriptors
 {
     private const string SourceGeneratorCategory = "SourceGenerator";
+
     // LSG001: ISourceGenerator usage
     public static readonly DiagnosticDescriptor LSG001 = new(
         id: "LSG001",
@@ -13,7 +14,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "ISourceGenerator is deprecated. IIncrementalGenerator provides better performance through incremental processing.");
+        description: "ISourceGenerator is deprecated. IIncrementalGenerator provides better performance through incremental processing."
+    );
 
     // LSG002: Non-FAWMN SyntaxProvider usage
     public static readonly DiagnosticDescriptor LSG002 = new(
@@ -23,7 +25,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "ForAttributeWithMetadataName (FAWMN) is optimized to filter nodes efficiently. Use CreateSyntaxProvider only when FAWMN is not applicable. To acknowledge an intentional exception, add a nearby comment containing 'lint4sg-allow-create-syntax-provider'.");
+        description: "ForAttributeWithMetadataName (FAWMN) is optimized to filter nodes efficiently. Use CreateSyntaxProvider only when FAWMN is not applicable. To acknowledge an intentional exception, add a nearby comment containing 'lint4sg-allow-create-syntax-provider'."
+    );
 
     // LSG003: High-cost CreateSyntaxProvider inheritance scan
     public static readonly DiagnosticDescriptor LSG003 = new(
@@ -33,7 +36,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Interface/base-class/attribute inheritance checks in CreateSyntaxProvider are expensive. Predicate checks always run on every syntax change, and transform checks that rely on GetDeclaredSymbol still represent a broad scan unless the pipeline was pre-filtered first. Use ForAttributeWithMetadataName or another narrow pre-filter before performing semantic checks.");
+        description: "Interface/base-class/attribute inheritance checks in CreateSyntaxProvider are expensive. Predicate checks always run on every syntax change, and transform checks that rely on GetDeclaredSymbol still represent a broad scan unless the pipeline was pre-filtered first. Use ForAttributeWithMetadataName or another narrow pre-filter before performing semantic checks."
+    );
 
     // LSG004: CancellationToken parameter missing on helper
     public static readonly DiagnosticDescriptor LSG004 = new(
@@ -43,7 +47,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "When a source-generator callback receives a CancellationToken, project helpers in that call tree must also accept it if the tree eventually reaches cancellation-aware work such as CT-capable external APIs or loops.");
+        description: "When a source-generator callback receives a CancellationToken, project helpers in that call tree must also accept it if the tree eventually reaches cancellation-aware work such as CT-capable external APIs or loops."
+    );
 
     // LSG005: CancellationToken available but not used correctly
     public static readonly DiagnosticDescriptor LSG005 = new(
@@ -53,7 +58,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "After a helper accepts a CancellationToken, it must keep forwarding that token to CT-aware child calls and call ThrowIfCancellationRequested() inside loops.");
+        description: "After a helper accepts a CancellationToken, it must keep forwarding that token to CT-aware child calls and call ThrowIfCancellationRequested() inside loops."
+    );
 
     // LSG006: Non-deterministic value in RegisterSourceOutput (non-collection)
     public static readonly DiagnosticDescriptor LSG006 = new(
@@ -63,7 +69,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "RegisterSourceOutput should receive equatable/deterministic values to enable Roslyn's caching mechanism. Non-deterministic types like ISymbol, SyntaxNode, SemanticModel, Compilation, or mutable classes will cause unnecessary regeneration.");
+        description: "RegisterSourceOutput should receive equatable/deterministic values to enable Roslyn's caching mechanism. Non-deterministic types like ISymbol, SyntaxNode, SemanticModel, Compilation, or mutable classes will cause unnecessary regeneration."
+    );
 
     // LSG007: Non-deterministic collection in RegisterSourceOutput
     public static readonly DiagnosticDescriptor LSG007 = new(
@@ -73,7 +80,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Arrays and List<T>/ImmutableArray<T> use reference equality, which defeats Roslyn's caching mechanism in RegisterSourceOutput. Use EquatableArray<T> or similar equatable collection.");
+        description: "Arrays and List<T>/ImmutableArray<T> use reference equality, which defeats Roslyn's caching mechanism in RegisterSourceOutput. Use EquatableArray<T> or similar equatable collection."
+    );
 
     // LSG008: Non-deterministic SyntaxProvider return value
     public static readonly DiagnosticDescriptor LSG008 = new(
@@ -83,7 +91,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "SyntaxProvider transforms should return equatable/deterministic types to enable Roslyn's caching. Non-deterministic types may cause the pipeline to re-execute unnecessarily.");
+        description: "SyntaxProvider transforms should return equatable/deterministic types to enable Roslyn's caching. Non-deterministic types may cause the pipeline to re-execute unnecessarily."
+    );
 
     // LSG009: NormalizeWhitespace usage
     public static readonly DiagnosticDescriptor LSG009 = new(
@@ -93,7 +102,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "NormalizeWhitespace() traverses the entire syntax tree which is expensive. Use IndentedTextWriter or a similar indentation-aware writer for code generation.");
+        description: "NormalizeWhitespace() traverses the entire syntax tree which is expensive. Use IndentedTextWriter or a similar indentation-aware writer for code generation."
+    );
 
     // LSG010: Excessive whitespace in AppendLine
     public static readonly DiagnosticDescriptor LSG010 = new(
@@ -103,7 +113,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Using 8+ consecutive spaces or 2+ consecutive tabs in AppendLine/Append calls indicates manual indentation management. Use IndentedStringBuilder or a similar utility for better maintainability.");
+        description: "Using 8+ consecutive spaces or 2+ consecutive tabs in AppendLine/Append calls indicates manual indentation management. Use IndentedStringBuilder or a similar utility for better maintainability."
+    );
 
     // LSG011: Consecutive AppendLine calls
     public static readonly DiagnosticDescriptor LSG011 = new(
@@ -113,7 +124,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Three or more consecutive AppendLine calls without branching should be replaced with a raw string literal ($$\"\"\"...\"\"\"]) for better readability and maintainability.");
+        description: "Three or more consecutive AppendLine calls without branching should be replaced with a raw string literal ($$\"\"\"...\"\"\"]) for better readability and maintainability."
+    );
 
     // LSG012: External dependency usage
     public static readonly DiagnosticDescriptor LSG012 = new(
@@ -123,7 +135,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "Source generators with external NuGet dependencies require complex packaging. Consider inlining or avoiding external dependencies.");
+        description: "Source generators with external NuGet dependencies require complex packaging. Consider inlining or avoiding external dependencies."
+    );
 
     // LSG013: Reflection API usage
     public static readonly DiagnosticDescriptor LSG013 = new(
@@ -133,7 +146,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "Using reflection in a source generator defeats the performance and correctness benefits of compile-time code generation. Generate static code instead of using reflection.");
+        description: "Using reflection in a source generator defeats the performance and correctness benefits of compile-time code generation. Generate static code instead of using reflection."
+    );
 
     // LSG014: Microsoft.CodeAnalysis.CSharp version too new
     public static readonly DiagnosticDescriptor LSG014 = new(
@@ -143,7 +157,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "Using a newer version of Microsoft.CodeAnalysis.CSharp limits the environments where the generator can run. Consider targeting a lower version for maximum compatibility.");
+        description: "Using a newer version of Microsoft.CodeAnalysis.CSharp limits the environments where the generator can run. Consider targeting a lower version for maximum compatibility."
+    );
 
     // LSG015: Fully-indented raw string literal
     public static readonly DiagnosticDescriptor LSG015 = new(
@@ -153,7 +168,8 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Raw string literals are good for multi-line generation, but if every emitted line starts with indentation then the generated output becomes fragile. Keep the source indented via the closing delimiter and avoid baking shared leading whitespace into the output itself.");
+        description: "Raw string literals are good for multi-line generation, but if every emitted line starts with indentation then the generated output becomes fragile. Keep the source indented via the closing delimiter and avoid baking shared leading whitespace into the output itself."
+    );
 
     // LSG016: Allocation inside syntax provider predicate
     public static readonly DiagnosticDescriptor LSG016 = new(
@@ -163,6 +179,6 @@ internal static class DiagnosticDescriptors
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "CreateSyntaxProvider and ForAttributeWithMetadataName predicates run extremely often. Allocations inside predicates add avoidable overhead and should be moved out of the predicate or deferred to later pipeline stages.");
-
+        description: "CreateSyntaxProvider and ForAttributeWithMetadataName predicates run extremely often. Allocations inside predicates add avoidable overhead and should be moved out of the predicate or deferred to later pipeline stages."
+    );
 }
