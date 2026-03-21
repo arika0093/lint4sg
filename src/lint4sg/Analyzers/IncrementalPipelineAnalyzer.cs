@@ -17,6 +17,11 @@ namespace lint4sg.Analyzers;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
 {
+    private const string GenericTupleGuidance =
+        "Flatten the model or introduce a named type.";
+    private const string SameTypeTupleMergeGuidance =
+        "Because matching Left and Right branches have the same type, merge them first with a helper such as MergeCollectedValues<T>(first, second).";
+
     private static readonly ImmutableHashSet<string> PipelineCallbackMethods =
         ImmutableHashSet.Create(
             StringComparer.Ordinal,
@@ -41,6 +46,19 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
 
     private static readonly ImmutableHashSet<string> ElementwiseMethodNames =
         ImmutableHashSet.Create(StringComparer.Ordinal, "Select", "SelectMany", "Where");
+
+    private readonly struct TupleProliferationDiagnostic
+    {
+        public TupleProliferationDiagnostic(Location location, string guidance)
+        {
+            Location = location;
+            Guidance = guidance;
+        }
+
+        public Location Location { get; }
+
+        public string Guidance { get; }
+    }
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(
@@ -97,10 +115,14 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
                 );
             }
 
-            if (TryFindTupleProliferation(callback, context.SemanticModel) is { } tupleNode)
+            if (TryFindTupleProliferation(callback, context.SemanticModel) is { } tupleDiagnostic)
             {
                 context.ReportDiagnostic(
-                    Diagnostic.Create(DiagnosticDescriptors.LSG020, tupleNode.GetLocation())
+                    Diagnostic.Create(
+                        DiagnosticDescriptors.LSG020,
+                        tupleDiagnostic.Location,
+                        tupleDiagnostic.Guidance
+                    )
                 );
             }
         }
@@ -366,12 +388,13 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         return true;
     }
 
-    private static SyntaxNode? TryFindTupleProliferation(
+    private static TupleProliferationDiagnostic? TryFindTupleProliferation(
         AnonymousFunctionExpressionSyntax callback,
         SemanticModel semanticModel
     )
     {
         var body = callback.Body;
+        var guidance = GetTupleProliferationGuidance(body, semanticModel);
         var nestedTuple = body
             .DescendantNodesAndSelf()
             .OfType<TupleExpressionSyntax>()
@@ -379,14 +402,59 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
                 tuple.Arguments.Any(argument => UnwrapExpression(argument.Expression) is TupleExpressionSyntax)
             );
         if (nestedTuple != null)
-            return nestedTuple;
+            return new TupleProliferationDiagnostic(nestedTuple.GetLocation(), guidance);
 
-        return body
+        var deepNavigation = body
             .DescendantNodesAndSelf()
             .OfType<MemberAccessExpressionSyntax>()
             .FirstOrDefault(memberAccess =>
                 GetTupleNavigationDepth(memberAccess, semanticModel, callback) >= 2
             );
+        return deepNavigation == null
+            ? null
+            : new TupleProliferationDiagnostic(deepNavigation.GetLocation(), guidance);
+    }
+
+    private static string GetTupleProliferationGuidance(
+        CSharpSyntaxNode node,
+        SemanticModel semanticModel
+    ) => HasSameTypeLeftRightBranches(node, semanticModel)
+        ? SameTypeTupleMergeGuidance
+        : GenericTupleGuidance;
+
+    private static bool HasSameTypeLeftRightBranches(
+        CSharpSyntaxNode node,
+        SemanticModel semanticModel
+    )
+    {
+        var accesses = node
+            .DescendantNodesAndSelf()
+            .OfType<MemberAccessExpressionSyntax>()
+            .Where(memberAccess => memberAccess.Name.Identifier.Text is "Left" or "Right")
+            .Select(memberAccess => new
+            {
+                Side = memberAccess.Name.Identifier.Text,
+                BaseExpression = UnwrapExpression(memberAccess.Expression),
+                Type = semanticModel.GetTypeInfo(memberAccess).Type,
+            })
+            .Where(access => access.Type != null)
+            .ToArray();
+
+        foreach (var leftAccess in accesses.Where(access => access.Side == "Left"))
+        {
+            foreach (var rightAccess in accesses.Where(access => access.Side == "Right"))
+            {
+                if (
+                    leftAccess.BaseExpression.IsEquivalentTo(rightAccess.BaseExpression)
+                    && SymbolEqualityComparer.Default.Equals(leftAccess.Type, rightAccess.Type)
+                )
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static int GetTupleNavigationDepth(

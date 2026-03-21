@@ -186,11 +186,11 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor LSG017 = new(
         id: "LSG017",
         title: "Pipeline callbacks must be static",
-        messageFormat: "This pipeline callback does not capture enclosing state and can be marked static",
+        messageFormat: "This pipeline callback does not capture enclosing state and must be marked static.",
         category: SourceGeneratorCategory,
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Incremental-generator pipeline callbacks should be static whenever they do not capture enclosing locals, parameters, or instance state. Static callbacks prevent accidental captures in hot paths."
+        description: "Incremental-generator pipeline callbacks must be static whenever they do not capture enclosing locals, parameters, or instance state. Static callbacks prevent accidental captures in hot paths."
     );
 
     // LSG018: Prefer SelectMany over materialized collections in the pipeline
@@ -199,7 +199,7 @@ internal static class DiagnosticDescriptors
         title: "Prefer SelectMany over materialized collections in the pipeline",
         messageFormat: "This pipeline materializes '{0}' only to flatten or iterate it in the next stage. Prefer SelectMany to keep item granularity.",
         category: SourceGeneratorCategory,
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "Avoid carrying arrays, List<T>, or ImmutableArray<T> through the pipeline when the next stage only flattens or iterates them. Prefer SelectMany so items stay granular."
     );
@@ -210,7 +210,7 @@ internal static class DiagnosticDescriptors
         title: "Delay Collect",
         messageFormat: "Collect() happens before item-level filtering or projection. Apply Where, Select, or SelectMany before Collect.",
         category: SourceGeneratorCategory,
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "Call Collect() only near the point where whole-set aggregation is actually needed. Item-level filtering or projection should stay upstream."
     );
@@ -219,10 +219,10 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor LSG020 = new(
         id: "LSG020",
         title: "Nested tuple proliferation in pipeline composition",
-        messageFormat: "Avoid nested Left or Right tuple navigation and nested tuple construction in pipeline callbacks. Flatten the model or introduce a named type.",
+        messageFormat: "Avoid nested Left or Right tuple navigation and nested tuple construction in pipeline callbacks. {0}",
         category: SourceGeneratorCategory,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Repeated Left/Right tuple navigation and nested tuple construction make incremental pipelines hard to read and maintain. Flatten the composition or introduce named intermediate models."
+        description: "Repeated Left/Right tuple navigation and nested tuple construction make incremental pipelines hard to read and maintain. Flatten the composition or introduce named intermediate models, and when matching Left/Right branches share the same type, merge them before combining further."
     );
 }

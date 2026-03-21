@@ -35,9 +35,9 @@ dotnet add package lint4sg
 | [LSG014](#lsg014) | Warning | CodeAnalysis.CSharp version may be too new | Lower versions support more environments |
 | [LSG015](#lsg015) | Error | Avoid fully-indented raw string output | Raw string output should not prepend indentation on every line |
 | [LSG016](#lsg016) | Error | Avoid allocations in syntax provider predicate | Predicates run hot and must stay allocation-free |
-| [LSG017](#lsg017) | Warning | Pipeline callbacks must be static | Prevent accidental captures in incremental hot paths |
-| [LSG018](#lsg018) | Warning | Prefer SelectMany over materialized collections in the pipeline | Keep item granularity instead of carrying arrays or lists |
-| [LSG019](#lsg019) | Warning | Delay Collect | Apply item-level filtering and projection before whole-set aggregation |
+| [LSG017](#lsg017) | Error | Pipeline callbacks must be static | Prevent accidental captures in incremental hot paths |
+| [LSG018](#lsg018) | Error | Prefer SelectMany over materialized collections in the pipeline | Keep item granularity instead of carrying arrays or lists |
+| [LSG019](#lsg019) | Error | Delay Collect | Apply item-level filtering and projection before whole-set aggregation |
 | [LSG020](#lsg020) | Error | Nested tuple proliferation in pipeline composition | Avoid repeated `Left` / `Right` tuple navigation |
 
 ---
@@ -399,12 +399,12 @@ var result = context.SyntaxProvider.CreateSyntaxProvider(
 
 ### LSG017
 
-**Pipeline callbacks must be static** *(warning)*
+**Pipeline callbacks must be static**
 
 Incremental pipeline callbacks run often, so they should be `static` whenever they do not capture enclosing locals, parameters, or instance state. Marking them `static` prevents accidental captures from creeping into hot paths later.
 
 ```csharp
-// ⚠️ LSG017
+// ❌ LSG017
 var projected = values.Select((item, ct) => item.ToString());
 
 // ✅ OK
@@ -415,12 +415,12 @@ var projected = values.Select(static (item, ct) => item.ToString());
 
 ### LSG018
 
-**Prefer SelectMany over materialized collections in the pipeline** *(warning)*
+**Prefer SelectMany over materialized collections in the pipeline**
 
 Do not materialize arrays, `List<T>`, or `ImmutableArray<T>` in one stage only to flatten or iterate them immediately in the next stage. Prefer `SelectMany` so the pipeline keeps item granularity and avoids unnecessary collection churn.
 
 ```csharp
-// ⚠️ LSG018
+// ❌ LSG018
 var materialized = values.Select(static (item, ct) => ImmutableArray.Create(item, item + 1));
 var flattened = materialized.SelectMany(static (items, ct) => items);
 
@@ -432,12 +432,12 @@ var flattened = values.SelectMany(static (item, ct) => ImmutableArray.Create(ite
 
 ### LSG019
 
-**Delay Collect** *(warning)*
+**Delay Collect**
 
 `Collect()` should happen only near the point where whole-set aggregation is actually required. If the next stage still performs item-level filtering or projection, keep those operations upstream and collect later.
 
 ```csharp
-// ⚠️ LSG019
+// ❌ LSG019
 var collected = values.Collect();
 var filtered = collected.Select(
     static (items, ct) => items.Where(static item => item.IsValid).ToImmutableArray());
@@ -453,7 +453,7 @@ var collected = filtered.Collect();
 
 **Nested tuple proliferation in pipeline composition**
 
-Repeated `Left` / `Right` tuple navigation and nested tuple construction quickly make `Combine`-heavy pipelines unreadable. Flatten the shape or introduce a named intermediate model before the nesting spreads further.
+Repeated `Left` / `Right` tuple navigation and nested tuple construction quickly make `Combine`-heavy pipelines unreadable. Flatten the shape or introduce a named intermediate model before the nesting spreads further. When matching `Left` / `Right` branches share the same collected type, merge them first instead of carrying both branches forward as nested tuples.
 
 ```csharp
 // ❌ LSG020
@@ -463,6 +463,21 @@ var projected = combined.Select(
 // ✅ OK
 var projected = combined.Select(
     static (value, ct) => new MyModel(value.Left.Left, value.Left.Right, value.Right));
+```
+
+When the repeated branches are the same collected type, a helper like this keeps the pipeline flat and deterministic:
+
+```csharp
+private static IncrementalValueProvider<EquatableArray<T>> MergeCollectedValues<T>(
+    IncrementalValueProvider<ImmutableArray<T>> first,
+    IncrementalValueProvider<ImmutableArray<T>> second
+)
+    where T : IEquatable<T>
+{
+    return first
+        .Combine(second)
+        .Select(static (pair, _) => new EquatableArray<T>(pair.Left.Concat(pair.Right)));
+}
 ```
 
 ## License

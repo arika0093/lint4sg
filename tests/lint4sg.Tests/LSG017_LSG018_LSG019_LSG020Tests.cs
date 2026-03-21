@@ -12,6 +12,11 @@ namespace lint4sg.Tests;
 
 public class LSG017_LSG018_LSG019_LSG020_PipelineTests
 {
+    private const string GenericTupleGuidance =
+        "Flatten the model or introduce a named type.";
+    private const string SameTypeTupleMergeGuidance =
+        "Because matching Left and Right branches have the same type, merge them first with a helper such as MergeCollectedValues<T>(first, second).";
+
     private const string IncrementalStubs = """
         namespace Microsoft.CodeAnalysis
         {
@@ -112,7 +117,7 @@ public class LSG017_LSG018_LSG019_LSG020_PipelineTests
 
         await RunTestAsync(
             code,
-            new DiagnosticResult("LSG017", DiagnosticSeverity.Warning).WithLocation(0)
+            new DiagnosticResult("LSG017", DiagnosticSeverity.Error).WithLocation(0)
         );
     }
 
@@ -135,8 +140,8 @@ public class LSG017_LSG018_LSG019_LSG020_PipelineTests
 
         await RunTestAsync(
             code,
-            new DiagnosticResult("LSG017", DiagnosticSeverity.Warning).WithLocation(0),
-            new DiagnosticResult("LSG017", DiagnosticSeverity.Warning).WithLocation(1)
+            new DiagnosticResult("LSG017", DiagnosticSeverity.Error).WithLocation(0),
+            new DiagnosticResult("LSG017", DiagnosticSeverity.Error).WithLocation(1)
         );
     }
 
@@ -199,7 +204,7 @@ public class LSG017_LSG018_LSG019_LSG020_PipelineTests
 
         await RunTestAsync(
             code,
-            new DiagnosticResult("LSG018", DiagnosticSeverity.Warning)
+            new DiagnosticResult("LSG018", DiagnosticSeverity.Error)
                 .WithLocation(0)
                 .WithArguments("System.Collections.Immutable.ImmutableArray<int>")
         );
@@ -248,7 +253,7 @@ public class LSG017_LSG018_LSG019_LSG020_PipelineTests
 
         await RunTestAsync(
             code,
-            new DiagnosticResult("LSG019", DiagnosticSeverity.Warning).WithLocation(0)
+            new DiagnosticResult("LSG019", DiagnosticSeverity.Error).WithLocation(0)
         );
     }
 
@@ -276,7 +281,7 @@ public class LSG017_LSG018_LSG019_LSG020_PipelineTests
     }
 
     [Fact]
-    public async Task NestedTupleProjection_ReportsLSG020()
+    public async Task NestedTupleProjection_WithSameTypeLeftRight_ReportsMergeGuidance()
     {
         var code = """
             using Microsoft.CodeAnalysis;
@@ -296,8 +301,72 @@ public class LSG017_LSG018_LSG019_LSG020_PipelineTests
 
         await RunTestAsync(
             code,
-            new DiagnosticResult("LSG020", DiagnosticSeverity.Error).WithLocation(0)
+            new DiagnosticResult("LSG020", DiagnosticSeverity.Error)
+                .WithLocation(0)
+                .WithArguments(SameTypeTupleMergeGuidance)
         );
+    }
+
+    [Fact]
+    public async Task NestedTupleProjection_WithDifferentLeftRightTypes_ReportsGenericGuidance()
+    {
+        var code = """
+            using Microsoft.CodeAnalysis;
+
+            public sealed class MyGenerator : IIncrementalGenerator
+            {
+                public void Initialize(IncrementalGeneratorInitializationContext context)
+                {
+                    IncrementalValueProvider<string> left = default;
+                    IncrementalValueProvider<int> right = default;
+                    IncrementalValueProvider<bool> third = default;
+                    var combined = left.Combine(right).Combine(third);
+                    var projected = combined.Select(static (value, ct) => {|#0:((value.Left.Left, value.Left.Right), value.Right)|});
+                }
+            }
+            """;
+
+        await RunTestAsync(
+            code,
+            new DiagnosticResult("LSG020", DiagnosticSeverity.Error)
+                .WithLocation(0)
+                .WithArguments(GenericTupleGuidance)
+        );
+    }
+
+    [Fact]
+    public async Task MergeCollectedValuesStyleHelper_DoesNotReportLSG020()
+    {
+        var code = """
+            using System;
+            using System.Collections.Generic;
+            using System.Collections.Immutable;
+            using System.Linq;
+            using Microsoft.CodeAnalysis;
+
+            public readonly struct EquatableArray<T>
+                where T : IEquatable<T>
+            {
+                public EquatableArray(IEnumerable<T> values)
+                {
+                }
+            }
+
+            public static class PipelineHelpers
+            {
+                private static IncrementalValueProvider<EquatableArray<T>> MergeCollectedValues<T>(
+                    IncrementalValueProvider<ImmutableArray<T>> first,
+                    IncrementalValueProvider<ImmutableArray<T>> second)
+                    where T : IEquatable<T>
+                {
+                    return first
+                        .Combine(second)
+                        .Select(static (pair, _) => new EquatableArray<T>(pair.Left.Concat(pair.Right)));
+                }
+            }
+            """;
+
+        await RunTestAsync(code);
     }
 
     [Fact]
