@@ -453,7 +453,7 @@ var collected = filtered.Collect();
 
 **Nested tuple proliferation in pipeline composition**
 
-Repeated `Left` / `Right` tuple navigation and nested tuple construction quickly make `Combine`-heavy pipelines unreadable. Flatten the shape or introduce a named intermediate model before the nesting spreads further. When matching `Left` / `Right` branches share the same collected type, merge them first instead of carrying both branches forward as nested tuples.
+Repeated `Left` / `Right` tuple navigation and nested tuple construction quickly make `Combine`-heavy pipelines unreadable. Chaining `Combine` repeatedly until the callback input itself becomes a nested tuple such as `((Foo Left, Bar Right) Left, Baz Right)` is also reported. Flatten the shape or introduce a named intermediate model before the nesting spreads further. When matching `Left` / `Right` branches share the same collected type, merge them first instead of carrying both branches forward as nested tuples.
 
 ```csharp
 // ❌ LSG020

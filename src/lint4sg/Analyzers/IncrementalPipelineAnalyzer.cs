@@ -442,6 +442,9 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
         SemanticModel semanticModel
     )
     {
+        if (TryFindNestedTupleParameter(callback, semanticModel) is { } nestedTupleParameter)
+            return nestedTupleParameter;
+
         var body = callback.Body;
         var guidance = GetTupleProliferationGuidance(body, semanticModel);
         var nestedTuple = body
@@ -464,12 +467,37 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
             : new TupleProliferationDiagnostic(deepNavigation.GetLocation(), guidance);
     }
 
+    private static TupleProliferationDiagnostic? TryFindNestedTupleParameter(
+        AnonymousFunctionExpressionSyntax callback,
+        SemanticModel semanticModel
+    )
+    {
+        foreach (var parameterSyntax in GetParameterSyntaxes(callback))
+        {
+            if (
+                semanticModel.GetDeclaredSymbol(parameterSyntax) is IParameterSymbol { Type: { } type }
+                && ContainsNestedTuple(type)
+            )
+            {
+                return new TupleProliferationDiagnostic(
+                    parameterSyntax.GetLocation(),
+                    GetTupleProliferationGuidance(type)
+                );
+            }
+        }
+
+        return null;
+    }
+
     private static string GetTupleProliferationGuidance(
         CSharpSyntaxNode node,
         SemanticModel semanticModel
     ) => HasSameTypeLeftRightBranches(node, semanticModel)
         ? SameTypeTupleMergeGuidance
         : GenericTupleGuidance;
+
+    private static string GetTupleProliferationGuidance(ITypeSymbol type) =>
+        HasSameTypeLeftRightBranches(type) ? SameTypeTupleMergeGuidance : GenericTupleGuidance;
 
     private static bool HasSameTypeLeftRightBranches(
         CSharpSyntaxNode node,
@@ -505,6 +533,28 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
 
         return false;
     }
+
+    private static bool HasSameTypeLeftRightBranches(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol tupleType || !tupleType.IsTupleType)
+            return false;
+
+        var tupleElements = tupleType.TupleElements;
+        if (
+            tupleElements.Length >= 2
+            && SymbolEqualityComparer.Default.Equals(tupleElements[0].Type, tupleElements[1].Type)
+        )
+        {
+            return true;
+        }
+
+        return tupleElements.Any(tupleElement => HasSameTypeLeftRightBranches(tupleElement.Type));
+    }
+
+    private static bool ContainsNestedTuple(ITypeSymbol type) =>
+        type is INamedTypeSymbol tupleType
+        && tupleType.IsTupleType
+        && tupleType.TupleElements.Any(tupleElement => tupleElement.Type is INamedTypeSymbol { IsTupleType: true });
 
     private static int GetTupleNavigationDepth(
         MemberAccessExpressionSyntax memberAccess,
@@ -577,6 +627,20 @@ public sealed class IncrementalPipelineAnalyzer : DiagnosticAnalyzer
                     && index < anonymousMethod.ParameterList.Parameters.Count =>
                 anonymousMethod.ParameterList.Parameters[index],
             _ => null,
+        };
+
+    private static IEnumerable<ParameterSyntax> GetParameterSyntaxes(
+        AnonymousFunctionExpressionSyntax callback
+    ) =>
+        callback switch
+        {
+            SimpleLambdaExpressionSyntax simpleLambda => [simpleLambda.Parameter],
+            ParenthesizedLambdaExpressionSyntax parenthesizedLambda => parenthesizedLambda
+                .ParameterList
+                .Parameters,
+            AnonymousMethodExpressionSyntax anonymousMethod
+                when anonymousMethod.ParameterList != null => anonymousMethod.ParameterList.Parameters,
+            _ => [],
         };
 
     private static bool ConsumesCollectionElementwise(
