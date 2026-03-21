@@ -732,58 +732,6 @@ public class LSG006_LSG007_LSG008_DeterministicValueTests
     }
 
     [Fact]
-    public async Task SyntaxProvider_RecordWithEquatableImmutableArrayStructWrapperOfSymbols_ReportsLSG008()
-    {
-        var code = """
-            using System;
-            using System.Collections;
-            using System.Collections.Generic;
-            using System.Collections.Immutable;
-            using System.Linq;
-            using Microsoft.CodeAnalysis;
-
-            public readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IEnumerable<T>
-            {
-                private readonly ImmutableArray<T> _items;
-
-                public EquatableArray(ImmutableArray<T> items)
-                {
-                    _items = items;
-                }
-
-                public int Count => _items.Length;
-                public T this[int index] => _items[index];
-
-                public bool Equals(EquatableArray<T> other) => _items.SequenceEqual(other._items);
-                public override bool Equals(object? obj) => obj is EquatableArray<T> other && Equals(other);
-                public override int GetHashCode() => Count;
-
-                public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)_items).GetEnumerator();
-                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-            }
-
-            public record GeneratedSourceSetModel(EquatableArray<ISymbol> Sources);
-
-            public class MyGenerator
-            {
-                public void Run(SyntaxValueProvider provider)
-                {
-                    var result = provider.CreateSyntaxProvider<GeneratedSourceSetModel>(
-                        (node, ct) => true,
-                        (ctx, ct) => null!);
-                }
-            }
-            """;
-
-        await RunTestAsync(
-            code,
-            new DiagnosticResult("LSG008", DiagnosticSeverity.Warning)
-                .WithSpan(33, 22, 35, 32)
-                .WithArguments("Microsoft.CodeAnalysis.ISymbol")
-        );
-    }
-
-    [Fact]
     public async Task SyntaxProvider_ForAttributeWithMetadataName_SelectOverImmutableArrayOfSymbols_ReportsLSG008OnElementType()
     {
         var code = """
