@@ -528,7 +528,6 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
     )
     {
         return hasValueEquality
-            && containingType.TypeKind == TypeKind.Class
             && IsCollectionLike(containingType)
             && member.DeclaredAccessibility == Accessibility.Private
             && IsCollectionStorageType(memberType);
