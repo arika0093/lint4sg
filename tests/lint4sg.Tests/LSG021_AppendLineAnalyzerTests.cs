@@ -174,4 +174,51 @@ public class LSG021_AppendLineAnalyzerTests
         var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code);
         await test.RunAsync();
     }
+
+    [Fact]
+    public async Task AppendLineWithInterpolatedTypeVariables_ReportsLSG021()
+    {
+        var code = """
+            using System.Text;
+
+            public class Generator
+            {
+                public void Generate(StringBuilder sb)
+                {
+                    var resultType = "Foo";
+                    var argType = "Bar";
+                    sb.AppendLine($"public {resultType} FunctionName({argType} arg)");
+                }
+            }
+            """;
+
+        var expected = new DiagnosticResult(
+            "LSG021",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(9, 9, 9, 74);
+
+        var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task AppendLineWithInterpolatedFullyQualifiedTypeVariables_NoLSG021()
+    {
+        var code = """
+            using System.Text;
+
+            public class Generator
+            {
+                public void Generate(StringBuilder sb)
+                {
+                    var resultType = "global::MyNamespace.Foo";
+                    var argType = "global::MyNamespace.Bar";
+                    sb.AppendLine($"public {resultType} FunctionName({argType} arg)");
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code);
+        await test.RunAsync();
+    }
 }

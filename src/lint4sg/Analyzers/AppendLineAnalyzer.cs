@@ -231,14 +231,12 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
         if (expr is InterpolatedStringExpressionSyntax interpolated)
         {
-            // For interpolated strings, reconstruct the static parts to check for whitespace
-            var parts = new System.Text.StringBuilder();
-            foreach (var content in interpolated.Contents)
-            {
-                if (content is InterpolatedStringTextSyntax text)
-                    parts.Append(text.TextToken.ValueText);
-            }
-            return parts.ToString();
+            return GetInterpolatedStringValue(
+                interpolated,
+                semanticModel,
+                currentPosition,
+                visitedLocals
+            );
         }
 
         var constantValue = semanticModel.GetConstantValue(expr);
@@ -344,6 +342,43 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         }
 
         return false;
+    }
+
+    private static string? GetInterpolatedStringValue(
+        InterpolatedStringExpressionSyntax interpolated,
+        SemanticModel semanticModel,
+        int currentPosition,
+        HashSet<ILocalSymbol> visitedLocals
+    )
+    {
+        var parts = new System.Text.StringBuilder();
+
+        foreach (var content in interpolated.Contents)
+        {
+            switch (content)
+            {
+                case InterpolatedStringTextSyntax text:
+                    parts.Append(text.TextToken.ValueText);
+                    break;
+                case InterpolationSyntax interpolation:
+                {
+                    var value = GetStringValue(
+                        interpolation.Expression,
+                        semanticModel,
+                        currentPosition,
+                        visitedLocals
+                    );
+                    if (value != null)
+                    {
+                        parts.Append(value);
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return parts.ToString();
     }
 
     private static IEnumerable<string> GetStatementCandidates(string text)
