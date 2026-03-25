@@ -507,7 +507,7 @@ When a source generator writes C# source text with `Append(...)` or `AppendLine(
 
 ```csharp
 // ❌ LSG021
-sb.AppendLine("var value = new MyNamespace.MyType();");
+sb.AppendLine("var value = new MyType();");
 sb.AppendLine("public Foo Create(Bar value, System.Collections.Generic.List<Baz> items)");
 
 // ✅ OK

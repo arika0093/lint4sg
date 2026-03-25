@@ -20,6 +20,8 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
     private const int MinConsecutiveSpaces = 8;
     private const int MinConsecutiveTabs = 2;
     private const int MinConsecutiveAppendLines = 3;
+    private const string AnalysisClassName = "__Lint4sgAnalysisContext";
+    private const string AnalysisMethodName = "__GeneratedCodeFragment";
 
     // Matches 8 or more consecutive spaces
     private static readonly Regex ExcessiveSpacesPattern = new(@" {8,}", RegexOptions.Compiled);
@@ -272,23 +274,14 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             return left != null && right != null ? left + right : null;
         }
 
-        if (
-            expr is IdentifierNameSyntax identifier
-            && GetReferencedSymbol(semanticModel, identifier) is ILocalSymbol localSymbol
-        )
+        if (expr is IdentifierNameSyntax identifier)
         {
-            if (!visitedLocals.Add(localSymbol))
-                return null;
-
-            var assignedExpression = FindAssignedExpression(
+            return TryResolveLocalStringValue(
                 identifier,
-                localSymbol,
                 semanticModel,
-                currentPosition
+                currentPosition,
+                visitedLocals
             );
-            return assignedExpression == null
-                ? null
-                : GetStringValue(assignedExpression, semanticModel, currentPosition, visitedLocals);
         }
 
         return null;
@@ -329,7 +322,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
     {
         yield return text;
 
-        if (!text.EndsWith("}", StringComparison.Ordinal) && text.Contains('('))
+        if (LooksLikeIncompleteMethodSignature(text))
         {
             yield return text + " { }";
         }
@@ -343,10 +336,17 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
     private static bool EndsWithStatementTerminator(string text) =>
         text.EndsWith(";", StringComparison.Ordinal) || text.EndsWith("}", StringComparison.Ordinal);
 
+    private static bool LooksLikeIncompleteMethodSignature(string text) =>
+        !EndsWithStatementTerminator(text)
+        && !text.Contains('{')
+        && !text.Contains("=>", StringComparison.Ordinal)
+        && text.Contains('(')
+        && text.Contains(')');
+
     private static bool ContainsNonFullyQualifiedTypeUsageInStatement(string statementText)
     {
         var compilationUnit = SyntaxFactory.ParseCompilationUnit(
-            $"class __Lint4sgGeneratedTypeCheck {{ void __M() {{ {statementText} }} }}"
+            $"class {AnalysisClassName} {{ void {AnalysisMethodName}() {{ {statementText} }} }}"
         );
 
         if (HasParserErrors(compilationUnit))
@@ -355,7 +355,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         var body = compilationUnit
             .DescendantNodes()
             .OfType<MethodDeclarationSyntax>()
-            .FirstOrDefault(static method => method.Identifier.ValueText == "__M")
+            .FirstOrDefault(static method => method.Identifier.ValueText == AnalysisMethodName)
             ?.Body;
 
         return body != null && ContainsNonFullyQualifiedTypeSyntax(body);
@@ -364,7 +364,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
     private static bool ContainsNonFullyQualifiedTypeUsageInMember(string memberText)
     {
         var compilationUnit = SyntaxFactory.ParseCompilationUnit(
-            $"class __Lint4sgGeneratedTypeCheck {{ {memberText} }}"
+            $"class {AnalysisClassName} {{ {memberText} }}"
         );
 
         if (HasParserErrors(compilationUnit))
@@ -374,7 +374,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             .DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
             .FirstOrDefault(static classDeclaration =>
-                classDeclaration.Identifier.ValueText == "__Lint4sgGeneratedTypeCheck"
+                classDeclaration.Identifier.ValueText == AnalysisClassName
             )
             ?.Members.FirstOrDefault();
 
@@ -433,6 +433,30 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             _ => false,
         };
 
+    private static string? TryResolveLocalStringValue(
+        IdentifierNameSyntax identifier,
+        SemanticModel semanticModel,
+        int currentPosition,
+        HashSet<ILocalSymbol> visitedLocals
+    )
+    {
+        if (GetReferencedSymbol(semanticModel, identifier) is not ILocalSymbol localSymbol)
+            return null;
+
+        if (!visitedLocals.Add(localSymbol))
+            return null;
+
+        var assignedExpression = FindAssignedExpression(
+            identifier,
+            localSymbol,
+            semanticModel,
+            currentPosition
+        );
+        return assignedExpression == null
+            ? null
+            : GetStringValue(assignedExpression, semanticModel, currentPosition, visitedLocals);
+    }
+
     private static ExpressionSyntax? FindAssignedExpression(
         IdentifierNameSyntax identifier,
         ILocalSymbol localSymbol,
@@ -462,11 +486,17 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
         foreach (var assignment in block.DescendantNodes().OfType<AssignmentExpressionSyntax>())
         {
-            if (
-                assignment.SpanStart >= currentPosition
-                || GetReferencedSymbol(semanticModel, assignment.Left) is not ILocalSymbol assignedLocal
-                || !SymbolEqualityComparer.Default.Equals(assignedLocal, localSymbol)
-            )
+            if (assignment.SpanStart >= currentPosition)
+            {
+                continue;
+            }
+
+            if (GetReferencedSymbol(semanticModel, assignment.Left) is not ILocalSymbol assignedLocal)
+            {
+                continue;
+            }
+
+            if (!SymbolEqualityComparer.Default.Equals(assignedLocal, localSymbol))
             {
                 continue;
             }
