@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -274,7 +275,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
         if (expr is IdentifierNameSyntax identifier)
         {
-            return TryResolveLocalStringValue(
+            return ResolveLocalStringValue(
                 identifier,
                 semanticModel,
                 currentPosition,
@@ -298,9 +299,11 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
     private static bool ContainsNonFullyQualifiedTypeUsage(string value)
     {
-        var trimmed = value.Trim();
-        if (string.IsNullOrEmpty(trimmed))
+        if (string.IsNullOrWhiteSpace(value))
             return false;
+
+        var trimmed =
+            char.IsWhiteSpace(value[0]) || char.IsWhiteSpace(value[^1]) ? value.Trim() : value;
 
         if (!MightContainTypeUsage(trimmed))
             return false;
@@ -351,7 +354,9 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         HashSet<ILocalSymbol> visitedLocals
     )
     {
-        var parts = new System.Text.StringBuilder();
+        // Reconstruct interpolated strings on a best-effort basis so analyzable
+        // embedded string fragments can still participate in downstream checks.
+        var parts = new StringBuilder();
 
         foreach (var content in interpolated.Contents)
         {
@@ -565,7 +570,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             _ => false,
         };
 
-    private static string? TryResolveLocalStringValue(
+    private static string? ResolveLocalStringValue(
         IdentifierNameSyntax identifier,
         SemanticModel semanticModel,
         int currentPosition,
@@ -620,7 +625,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         {
             if (assignment.SpanStart >= currentPosition)
             {
-                continue;
+                break;
             }
 
             if (GetReferencedSymbol(semanticModel, assignment.Left) is not ILocalSymbol assignedLocal)
