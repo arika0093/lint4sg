@@ -68,12 +68,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         var arg = args[0].Expression;
 
         // Get the string value
-        var stringValue = GetStringValue(
-            arg,
-            context.SemanticModel,
-            invocation.SpanStart,
-            new HashSet<ILocalSymbol>(SymbolEqualityComparer.Default)
-        );
+        var stringValue = GetStringValue(arg, context.SemanticModel, invocation.SpanStart);
         if (stringValue == null)
             return;
 
@@ -218,8 +213,14 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
     private static string? GetStringValue(
         ExpressionSyntax expr,
         SemanticModel semanticModel,
+        int currentPosition
+    ) => GetStringValue(expr, semanticModel, currentPosition, visitedLocals: null);
+
+    private static string? GetStringValue(
+        ExpressionSyntax expr,
+        SemanticModel semanticModel,
         int currentPosition,
-        HashSet<ILocalSymbol> visitedLocals
+        HashSet<ILocalSymbol>? visitedLocals
     )
     {
         if (
@@ -351,7 +352,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         InterpolatedStringExpressionSyntax interpolated,
         SemanticModel semanticModel,
         int currentPosition,
-        HashSet<ILocalSymbol> visitedLocals
+        HashSet<ILocalSymbol>? visitedLocals
     )
     {
         // Reconstruct interpolated strings on a best-effort basis so analyzable
@@ -400,12 +401,13 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
     {
         yield return text;
 
-        if (LooksLikeIncompleteMethodSignature(text))
+        var looksLikeIncompleteMethodSignature = LooksLikeIncompleteMethodSignature(text);
+        if (looksLikeIncompleteMethodSignature)
         {
             yield return text + " { }";
         }
 
-        if (!EndsWithStatementTerminator(text))
+        if (!EndsWithStatementTerminator(text) && !looksLikeIncompleteMethodSignature)
         {
             yield return text + ";";
         }
@@ -574,24 +576,32 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         IdentifierNameSyntax identifier,
         SemanticModel semanticModel,
         int currentPosition,
-        HashSet<ILocalSymbol> visitedLocals
+        HashSet<ILocalSymbol>? visitedLocals
     )
     {
         if (GetReferencedSymbol(semanticModel, identifier) is not ILocalSymbol localSymbol)
             return null;
 
+        visitedLocals ??= new HashSet<ILocalSymbol>(SymbolEqualityComparer.Default);
         if (!visitedLocals.Add(localSymbol))
             return null;
 
-        var assignedExpression = FindAssignedExpression(
-            identifier,
-            localSymbol,
-            semanticModel,
-            currentPosition
-        );
-        return assignedExpression == null
-            ? null
-            : GetStringValue(assignedExpression, semanticModel, currentPosition, visitedLocals);
+        try
+        {
+            var assignedExpression = FindAssignedExpression(
+                identifier,
+                localSymbol,
+                semanticModel,
+                currentPosition
+            );
+            return assignedExpression == null
+                ? null
+                : GetStringValue(assignedExpression, semanticModel, currentPosition, visitedLocals);
+        }
+        finally
+        {
+            visitedLocals.Remove(localSymbol);
+        }
     }
 
     private static ExpressionSyntax? FindAssignedExpression(

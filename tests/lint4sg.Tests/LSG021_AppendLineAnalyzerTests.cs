@@ -221,4 +221,30 @@ public class LSG021_AppendLineAnalyzerTests
         var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code);
         await test.RunAsync();
     }
+
+    [Fact]
+    public async Task AppendLineWithRepeatedLocalStringInConcatenation_ReportsLSG021()
+    {
+        var code = """
+            using System.Text;
+
+            public class Generator
+            {
+                public void Generate(StringBuilder sb)
+                {
+                    var typeName = "Foo";
+                    var line = "public " + typeName + " FunctionName(" + typeName + " arg)";
+                    sb.AppendLine(line);
+                }
+            }
+            """;
+
+        var expected = new DiagnosticResult(
+            "LSG021",
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+        ).WithSpan(9, 9, 9, 28);
+
+        var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code, expected);
+        await test.RunAsync();
+    }
 }
