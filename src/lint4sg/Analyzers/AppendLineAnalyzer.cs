@@ -221,12 +221,6 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         HashSet<ILocalSymbol> visitedLocals
     )
     {
-        var constantValue = semanticModel.GetConstantValue(expr);
-        if (constantValue is { HasValue: true, Value: string constantString })
-        {
-            return constantString;
-        }
-
         if (
             expr is LiteralExpressionSyntax literal
             && literal.IsKind(SyntaxKind.StringLiteralExpression)
@@ -245,6 +239,12 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
                     parts.Append(text.TextToken.ValueText);
             }
             return parts.ToString();
+        }
+
+        var constantValue = semanticModel.GetConstantValue(expr);
+        if (constantValue is { HasValue: true, Value: string constantString })
+        {
+            return constantString;
         }
 
         if (expr is ParenthesizedExpressionSyntax parenthesized)
@@ -313,7 +313,7 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
 
     private static bool MightContainTypeUsage(string value)
     {
-        if (!value.Any(char.IsLetter))
+        if (!ContainsLetter(value))
             return false;
 
         return value.IndexOf('<') >= 0
@@ -333,6 +333,17 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             || value.Contains("private ", StringComparison.Ordinal)
             || value.Contains("internal ", StringComparison.Ordinal)
             || value.Contains("protected ", StringComparison.Ordinal);
+    }
+
+    private static bool ContainsLetter(string value)
+    {
+        foreach (var ch in value)
+        {
+            if (char.IsLetter(ch))
+                return true;
+        }
+
+        return false;
     }
 
     private static IEnumerable<string> GetStatementCandidates(string text)
