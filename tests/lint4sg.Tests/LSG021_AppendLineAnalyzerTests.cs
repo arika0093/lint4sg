@@ -117,4 +117,61 @@ public class LSG021_AppendLineAnalyzerTests
         var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code);
         await test.RunAsync();
     }
+
+    [Fact]
+    public async Task AppendLineWithVarAndFullyQualifiedCreation_NoLSG021()
+    {
+        var code = """
+            using System.Text;
+
+            public class Generator
+            {
+                public void Generate(StringBuilder sb)
+                {
+                    sb.AppendLine("var value = new global::MyNamespace.MyType();");
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task AppendLineWithDynamic_NoLSG021()
+    {
+        var code = """
+            using System.Text;
+
+            public class Generator
+            {
+                public void Generate(StringBuilder sb)
+                {
+                    sb.AppendLine("dynamic value = default;");
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task AppendLineWithGenericTypeParameters_NoLSG021()
+    {
+        var code = """
+            using System.Text;
+
+            public class Generator
+            {
+                public void Generate(StringBuilder sb)
+                {
+                    sb.AppendLine("public TOutput Map<TInput, TOutput>(TInput value)");
+                }
+            }
+            """;
+
+        var test = TestHelpers.CreateTest<AppendLineAnalyzer>(code);
+        await test.RunAsync();
+    }
 }

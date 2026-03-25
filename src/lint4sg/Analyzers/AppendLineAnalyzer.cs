@@ -304,8 +304,35 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         if (string.IsNullOrEmpty(trimmed))
             return false;
 
+        if (!MightContainTypeUsage(trimmed))
+            return false;
+
         return GetStatementCandidates(trimmed).Any(ContainsNonFullyQualifiedTypeUsageInStatement)
             || GetMemberCandidates(trimmed).Any(ContainsNonFullyQualifiedTypeUsageInMember);
+    }
+
+    private static bool MightContainTypeUsage(string value)
+    {
+        if (!value.Any(char.IsLetter))
+            return false;
+
+        return value.IndexOf('<') >= 0
+            || value.IndexOf(':') >= 0
+            || value.IndexOf('(') >= 0
+            || value.IndexOf('=') >= 0
+            || value.IndexOf(';') >= 0
+            || value.Contains(" new ", StringComparison.Ordinal)
+            || value.StartsWith("new ", StringComparison.Ordinal)
+            || value.Contains("typeof", StringComparison.Ordinal)
+            || value.Contains("default", StringComparison.Ordinal)
+            || value.Contains("class ", StringComparison.Ordinal)
+            || value.Contains("struct ", StringComparison.Ordinal)
+            || value.Contains("interface ", StringComparison.Ordinal)
+            || value.Contains("record ", StringComparison.Ordinal)
+            || value.Contains("public ", StringComparison.Ordinal)
+            || value.Contains("private ", StringComparison.Ordinal)
+            || value.Contains("internal ", StringComparison.Ordinal)
+            || value.Contains("protected ", StringComparison.Ordinal);
     }
 
     private static IEnumerable<string> GetStatementCandidates(string text)
@@ -378,51 +405,110 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             )
             ?.Members.FirstOrDefault();
 
-        return member != null && ContainsNonFullyQualifiedTypeSyntax(member);
+        if (member is null)
+            return false;
+
+        var allowedTypeParameterNames = member
+            .DescendantNodes()
+            .OfType<TypeParameterSyntax>()
+            .Select(static typeParameter => typeParameter.Identifier.ValueText)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return ContainsNonFullyQualifiedTypeSyntax(member, allowedTypeParameterNames);
     }
 
     private static bool HasParserErrors(SyntaxNode node) =>
         node.GetDiagnostics().Any(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
     private static bool ContainsNonFullyQualifiedTypeSyntax(SyntaxNode node) =>
+        ContainsNonFullyQualifiedTypeSyntax(node, allowedTypeParameterNames: null);
+
+    private static bool ContainsNonFullyQualifiedTypeSyntax(
+        SyntaxNode node,
+        ISet<string>? allowedTypeParameterNames
+    ) =>
         node.DescendantNodes()
             .OfType<TypeSyntax>()
             .Where(static typeSyntax => typeSyntax.Parent is not TypeSyntax)
-            .Any(static typeSyntax => !IsAllowedTypeSyntax(typeSyntax));
+            .Any(typeSyntax => !IsAllowedTypeSyntax(typeSyntax, allowedTypeParameterNames));
 
     private static bool IsAllowedTypeSyntax(TypeSyntax typeSyntax) =>
+        IsAllowedTypeSyntax(typeSyntax, allowedTypeParameterNames: null);
+
+    private static bool IsAllowedTypeSyntax(
+        TypeSyntax typeSyntax,
+        ISet<string>? allowedTypeParameterNames
+    ) =>
         typeSyntax switch
         {
             PredefinedTypeSyntax => true,
-            NullableTypeSyntax nullableType => IsAllowedTypeSyntax(nullableType.ElementType),
-            ArrayTypeSyntax arrayType => IsAllowedTypeSyntax(arrayType.ElementType),
-            PointerTypeSyntax pointerType => IsAllowedTypeSyntax(pointerType.ElementType),
-            RefTypeSyntax refType => IsAllowedTypeSyntax(refType.Type),
-            TupleTypeSyntax tupleType => tupleType.Elements.All(static element =>
-                IsAllowedTypeSyntax(element.Type)
+            IdentifierNameSyntax identifierName => IsAllowedIdentifierTypeSyntax(
+                identifierName,
+                allowedTypeParameterNames
+            ),
+            NullableTypeSyntax nullableType => IsAllowedTypeSyntax(
+                nullableType.ElementType,
+                allowedTypeParameterNames
+            ),
+            ArrayTypeSyntax arrayType => IsAllowedTypeSyntax(
+                arrayType.ElementType,
+                allowedTypeParameterNames
+            ),
+            PointerTypeSyntax pointerType => IsAllowedTypeSyntax(
+                pointerType.ElementType,
+                allowedTypeParameterNames
+            ),
+            RefTypeSyntax refType => IsAllowedTypeSyntax(refType.Type, allowedTypeParameterNames),
+            TupleTypeSyntax tupleType => tupleType.Elements.All(element =>
+                IsAllowedTypeSyntax(element.Type, allowedTypeParameterNames)
             ),
             QualifiedNameSyntax qualifiedName => HasGlobalAliasRoot(qualifiedName)
-                && IsAllowedQualifiedTypeName(qualifiedName),
+                && IsAllowedQualifiedTypeName(qualifiedName, allowedTypeParameterNames),
             AliasQualifiedNameSyntax aliasQualifiedName => aliasQualifiedName.Alias.Identifier.ValueText
                     == "global"
-                && IsAllowedQualifiedTypeName(aliasQualifiedName.Name),
+                && IsAllowedQualifiedTypeName(aliasQualifiedName.Name, allowedTypeParameterNames),
             _ => false,
         };
 
     private static bool IsAllowedQualifiedTypeName(NameSyntax nameSyntax) =>
+        IsAllowedQualifiedTypeName(nameSyntax, allowedTypeParameterNames: null);
+
+    private static bool IsAllowedQualifiedTypeName(
+        NameSyntax nameSyntax,
+        ISet<string>? allowedTypeParameterNames
+    ) =>
         nameSyntax switch
         {
             IdentifierNameSyntax => true,
-            GenericNameSyntax genericName => genericName.TypeArgumentList.Arguments.All(
-                IsAllowedTypeSyntax
+            GenericNameSyntax genericName => genericName.TypeArgumentList.Arguments.All(typeArgument =>
+                IsAllowedTypeSyntax(typeArgument, allowedTypeParameterNames)
             ),
             AliasQualifiedNameSyntax aliasQualifiedName => aliasQualifiedName.Alias.Identifier.ValueText
                     == "global"
-                && IsAllowedQualifiedTypeName(aliasQualifiedName.Name),
-            QualifiedNameSyntax qualifiedName => IsAllowedQualifiedTypeName(qualifiedName.Left)
-                && IsAllowedQualifiedTypeName(qualifiedName.Right),
+                && IsAllowedQualifiedTypeName(aliasQualifiedName.Name, allowedTypeParameterNames),
+            QualifiedNameSyntax qualifiedName => IsAllowedQualifiedTypeName(
+                    qualifiedName.Left,
+                    allowedTypeParameterNames
+                )
+                && IsAllowedQualifiedTypeName(qualifiedName.Right, allowedTypeParameterNames),
             _ => false,
         };
+
+    private static bool IsAllowedIdentifierTypeSyntax(
+        IdentifierNameSyntax identifierName,
+        ISet<string>? allowedTypeParameterNames
+    )
+    {
+        if (identifierName.IsVar)
+            return true;
+
+        var identifierText = identifierName.Identifier.ValueText;
+        if (string.Equals(identifierText, "dynamic", StringComparison.Ordinal))
+            return true;
+
+        return allowedTypeParameterNames is not null
+            && allowedTypeParameterNames.Contains(identifierText);
+    }
 
     private static bool HasGlobalAliasRoot(NameSyntax nameSyntax) =>
         nameSyntax switch
