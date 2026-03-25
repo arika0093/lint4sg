@@ -55,6 +55,7 @@ readme: https://raw.githubusercontent.com/arika0093/lint4sg/refs/heads/main/READ
 | [LSG018](#lsg018) | Error | Prefer SelectMany over materialized collections in the pipeline | Keep item granularity instead of carrying arrays or lists |
 | [LSG019](#lsg019) | Error | Delay Collect | Apply item-level filtering and projection before whole-set aggregation |
 | [LSG020](#lsg020) | Error | Nested tuple proliferation in pipeline composition | Avoid repeated `Left` / `Right` tuple navigation |
+| [LSG021](#lsg021) | Error | Use fully qualified type names in generated output | Emit type names with `global::` to avoid ambiguity |
 
 ---
 
@@ -494,6 +495,24 @@ private static IncrementalValueProvider<EquatableArray<T>> MergeCollectedValues<
         .Combine(second)
         .Select(static (pair, _) => new EquatableArray<T>(pair.Left.Concat(pair.Right)));
 }
+```
+
+---
+
+### LSG021
+
+**Use fully qualified type names in generated output**
+
+When a source generator writes C# source text with `Append(...)` or `AppendLine(...)`, referenced type names should be fully qualified and start with `global::`. This avoids ambiguous binding and namespace collisions in the generated code. Built-in types such as `int`, `string`, and `bool` are allowed as-is.
+
+```csharp
+// ❌ LSG021
+sb.AppendLine("var value = new MyNamespace.MyType();");
+sb.AppendLine("public Foo Create(Bar value, System.Collections.Generic.List<Baz> items)");
+
+// ✅ OK
+sb.AppendLine("var value = new global::MyNamespace.MyType();");
+sb.AppendLine("public global::MyNamespace.Foo Create(global::MyNamespace.Bar value, global::System.Collections.Generic.List<global::MyNamespace.Baz> items)");
 ```
 
 ## License

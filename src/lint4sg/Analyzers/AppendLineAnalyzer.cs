@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -29,7 +31,8 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         ImmutableArray.Create(
             DiagnosticDescriptors.LSG010,
             DiagnosticDescriptors.LSG011,
-            DiagnosticDescriptors.LSG015
+            DiagnosticDescriptors.LSG015,
+            DiagnosticDescriptors.LSG021
         );
 
     public override void Initialize(AnalysisContext context)
@@ -62,7 +65,12 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         var arg = args[0].Expression;
 
         // Get the string value
-        var stringValue = GetStringValue(arg);
+        var stringValue = GetStringValue(
+            arg,
+            context.SemanticModel,
+            invocation.SpanStart,
+            new HashSet<ILocalSymbol>(SymbolEqualityComparer.Default)
+        );
         if (stringValue == null)
             return;
 
@@ -74,15 +82,20 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
                     Diagnostic.Create(DiagnosticDescriptors.LSG015, invocation.GetLocation())
                 );
             }
-            return;
         }
-
-        if (
+        else if (
             ExcessiveSpacesPattern.IsMatch(stringValue) || ExcessiveTabsPattern.IsMatch(stringValue)
         )
         {
             context.ReportDiagnostic(
                 Diagnostic.Create(DiagnosticDescriptors.LSG010, invocation.GetLocation())
+            );
+        }
+
+        if (ContainsNonFullyQualifiedTypeUsage(stringValue))
+        {
+            context.ReportDiagnostic(
+                Diagnostic.Create(DiagnosticDescriptors.LSG021, invocation.GetLocation())
             );
         }
     }
@@ -199,8 +212,19 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    private static string? GetStringValue(ExpressionSyntax expr)
+    private static string? GetStringValue(
+        ExpressionSyntax expr,
+        SemanticModel semanticModel,
+        int currentPosition,
+        HashSet<ILocalSymbol> visitedLocals
+    )
     {
+        var constantValue = semanticModel.GetConstantValue(expr);
+        if (constantValue is { HasValue: true, Value: string constantString })
+        {
+            return constantString;
+        }
+
         if (
             expr is LiteralExpressionSyntax literal
             && literal.IsKind(SyntaxKind.StringLiteralExpression)
@@ -221,6 +245,52 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             return parts.ToString();
         }
 
+        if (expr is ParenthesizedExpressionSyntax parenthesized)
+        {
+            return GetStringValue(
+                parenthesized.Expression,
+                semanticModel,
+                currentPosition,
+                visitedLocals
+            );
+        }
+
+        if (expr is BinaryExpressionSyntax { RawKind: (int)SyntaxKind.AddExpression } addExpression)
+        {
+            var left = GetStringValue(
+                addExpression.Left,
+                semanticModel,
+                currentPosition,
+                visitedLocals
+            );
+            var right = GetStringValue(
+                addExpression.Right,
+                semanticModel,
+                currentPosition,
+                visitedLocals
+            );
+            return left != null && right != null ? left + right : null;
+        }
+
+        if (
+            expr is IdentifierNameSyntax identifier
+            && GetReferencedSymbol(semanticModel, identifier) is ILocalSymbol localSymbol
+        )
+        {
+            if (!visitedLocals.Add(localSymbol))
+                return null;
+
+            var assignedExpression = FindAssignedExpression(
+                identifier,
+                localSymbol,
+                semanticModel,
+                currentPosition
+            );
+            return assignedExpression == null
+                ? null
+                : GetStringValue(assignedExpression, semanticModel, currentPosition, visitedLocals);
+        }
+
         return null;
     }
 
@@ -233,5 +303,183 @@ public sealed class AppendLineAnalyzer : DiagnosticAnalyzer
             .ToArray();
 
         return lines.Length > 1 && lines.All(static line => char.IsWhiteSpace(line[0]));
+    }
+
+    private static bool ContainsNonFullyQualifiedTypeUsage(string value)
+    {
+        var trimmed = value.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return false;
+
+        return GetStatementCandidates(trimmed).Any(ContainsNonFullyQualifiedTypeUsageInStatement)
+            || GetMemberCandidates(trimmed).Any(ContainsNonFullyQualifiedTypeUsageInMember);
+    }
+
+    private static IEnumerable<string> GetStatementCandidates(string text)
+    {
+        yield return text;
+
+        if (!EndsWithStatementTerminator(text))
+        {
+            yield return text + ";";
+        }
+    }
+
+    private static IEnumerable<string> GetMemberCandidates(string text)
+    {
+        yield return text;
+
+        if (!text.EndsWith("}", StringComparison.Ordinal) && text.Contains('('))
+        {
+            yield return text + " { }";
+        }
+
+        if (!EndsWithStatementTerminator(text))
+        {
+            yield return text + ";";
+        }
+    }
+
+    private static bool EndsWithStatementTerminator(string text) =>
+        text.EndsWith(";", StringComparison.Ordinal) || text.EndsWith("}", StringComparison.Ordinal);
+
+    private static bool ContainsNonFullyQualifiedTypeUsageInStatement(string statementText)
+    {
+        var compilationUnit = SyntaxFactory.ParseCompilationUnit(
+            $"class __Lint4sgGeneratedTypeCheck {{ void __M() {{ {statementText} }} }}"
+        );
+
+        if (HasParserErrors(compilationUnit))
+            return false;
+
+        var body = compilationUnit
+            .DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .FirstOrDefault(static method => method.Identifier.ValueText == "__M")
+            ?.Body;
+
+        return body != null && ContainsNonFullyQualifiedTypeSyntax(body);
+    }
+
+    private static bool ContainsNonFullyQualifiedTypeUsageInMember(string memberText)
+    {
+        var compilationUnit = SyntaxFactory.ParseCompilationUnit(
+            $"class __Lint4sgGeneratedTypeCheck {{ {memberText} }}"
+        );
+
+        if (HasParserErrors(compilationUnit))
+            return false;
+
+        var member = compilationUnit
+            .DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .FirstOrDefault(static classDeclaration =>
+                classDeclaration.Identifier.ValueText == "__Lint4sgGeneratedTypeCheck"
+            )
+            ?.Members.FirstOrDefault();
+
+        return member != null && ContainsNonFullyQualifiedTypeSyntax(member);
+    }
+
+    private static bool HasParserErrors(SyntaxNode node) =>
+        node.GetDiagnostics().Any(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+    private static bool ContainsNonFullyQualifiedTypeSyntax(SyntaxNode node) =>
+        node.DescendantNodes()
+            .OfType<TypeSyntax>()
+            .Where(static typeSyntax => typeSyntax.Parent is not TypeSyntax)
+            .Any(static typeSyntax => !IsAllowedTypeSyntax(typeSyntax));
+
+    private static bool IsAllowedTypeSyntax(TypeSyntax typeSyntax) =>
+        typeSyntax switch
+        {
+            PredefinedTypeSyntax => true,
+            NullableTypeSyntax nullableType => IsAllowedTypeSyntax(nullableType.ElementType),
+            ArrayTypeSyntax arrayType => IsAllowedTypeSyntax(arrayType.ElementType),
+            PointerTypeSyntax pointerType => IsAllowedTypeSyntax(pointerType.ElementType),
+            RefTypeSyntax refType => IsAllowedTypeSyntax(refType.Type),
+            TupleTypeSyntax tupleType => tupleType.Elements.All(static element =>
+                IsAllowedTypeSyntax(element.Type)
+            ),
+            QualifiedNameSyntax qualifiedName => HasGlobalAliasRoot(qualifiedName)
+                && IsAllowedQualifiedTypeName(qualifiedName),
+            AliasQualifiedNameSyntax aliasQualifiedName => aliasQualifiedName.Alias.Identifier.ValueText
+                    == "global"
+                && IsAllowedQualifiedTypeName(aliasQualifiedName.Name),
+            _ => false,
+        };
+
+    private static bool IsAllowedQualifiedTypeName(NameSyntax nameSyntax) =>
+        nameSyntax switch
+        {
+            IdentifierNameSyntax => true,
+            GenericNameSyntax genericName => genericName.TypeArgumentList.Arguments.All(
+                IsAllowedTypeSyntax
+            ),
+            AliasQualifiedNameSyntax aliasQualifiedName => aliasQualifiedName.Alias.Identifier.ValueText
+                    == "global"
+                && IsAllowedQualifiedTypeName(aliasQualifiedName.Name),
+            QualifiedNameSyntax qualifiedName => IsAllowedQualifiedTypeName(qualifiedName.Left)
+                && IsAllowedQualifiedTypeName(qualifiedName.Right),
+            _ => false,
+        };
+
+    private static bool HasGlobalAliasRoot(NameSyntax nameSyntax) =>
+        nameSyntax switch
+        {
+            AliasQualifiedNameSyntax aliasQualifiedName =>
+                aliasQualifiedName.Alias.Identifier.ValueText == "global",
+            QualifiedNameSyntax qualifiedName => HasGlobalAliasRoot(qualifiedName.Left),
+            _ => false,
+        };
+
+    private static ExpressionSyntax? FindAssignedExpression(
+        IdentifierNameSyntax identifier,
+        ILocalSymbol localSymbol,
+        SemanticModel semanticModel,
+        int currentPosition
+    )
+    {
+        ExpressionSyntax? latestExpression = null;
+
+        foreach (var syntaxReference in localSymbol.DeclaringSyntaxReferences)
+        {
+            if (
+                syntaxReference.GetSyntax() is VariableDeclaratorSyntax
+                {
+                    Initializer: { Value: { } initializerValue }
+                } declarator
+                && declarator.SpanStart < currentPosition
+            )
+            {
+                latestExpression = initializerValue;
+            }
+        }
+
+        var block = identifier.AncestorsAndSelf().OfType<BlockSyntax>().FirstOrDefault();
+        if (block == null)
+            return latestExpression;
+
+        foreach (var assignment in block.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+        {
+            if (
+                assignment.SpanStart >= currentPosition
+                || GetReferencedSymbol(semanticModel, assignment.Left) is not ILocalSymbol assignedLocal
+                || !SymbolEqualityComparer.Default.Equals(assignedLocal, localSymbol)
+            )
+            {
+                continue;
+            }
+
+            latestExpression = assignment.Right;
+        }
+
+        return latestExpression;
+    }
+
+    private static ISymbol? GetReferencedSymbol(SemanticModel semanticModel, SyntaxNode node)
+    {
+        var symbolInfo = semanticModel.GetSymbolInfo(node);
+        return symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
     }
 }
