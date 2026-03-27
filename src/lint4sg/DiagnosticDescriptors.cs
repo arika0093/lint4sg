@@ -204,4 +204,13 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Error,
         description: "Repeated Left/Right tuple navigation and nested tuple construction make incremental pipelines hard to read and maintain. Flatten the composition or introduce named intermediate models, and when matching Left/Right branches share the same type, merge them before combining further."
     );
+
+    // LSG021: Fully qualified type names in generated output
+    public static readonly DiagnosticDescriptor LSG021 = CreateDescriptor(
+        id: "LSG021",
+        title: "Use fully qualified type names in generated output",
+        messageFormat: "Type names emitted via AppendLine/Append must be fully qualified and start with global::",
+        defaultSeverity: DiagnosticSeverity.Error,
+        description: "Type names written into generated source should use fully qualified names including global:: to avoid ambiguity and namespace collisions. Built-in types such as int and string are exempt."
+    );
 }
