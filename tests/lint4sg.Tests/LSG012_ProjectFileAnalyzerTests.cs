@@ -128,4 +128,12 @@ public class LSG012_ProjectFileAnalyzerTests
                 .WithArguments("Newtonsoft.Json")
         );
     }
+
+    [Fact]
+    public async Task EvaluatedAssetsExcludeSourceOnlyAndFullyExcludedCompilePackages()
+    {
+        await ProjectFileAnalyzerTestHelpers.RunEvaluatedPackageTestAsync(
+            "R|CodeGen.Source|1.0.0|||build;analyzers;contentfiles;none|\nR|CodeGen.Excluded|1.0.0|||compile|compile\nR|CodeGen.Runtime|2.0.0|||runtime|",
+            new DiagnosticResult("LSG012", DiagnosticSeverity.Warning).WithArguments("CodeGen.Runtime"));
+    }
 }

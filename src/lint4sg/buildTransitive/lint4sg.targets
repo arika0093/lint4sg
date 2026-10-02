@@ -1,0 +1,16 @@
+<Project>
+  <!-- Expose evaluated PackageReference metadata to the analyzer as an AdditionalFile. -->
+  <Target Name="Lint4sgWriteEvaluatedPackageReferences" BeforeTargets="CoreCompile"
+          Condition="'@(PackageReference)' != ''">
+    <ItemGroup>
+      <_Lint4sgPackageReference Include="@(PackageReference)" />
+    </ItemGroup>
+    <WriteLinesToFile
+      File="$(IntermediateOutputPath)lint4sg-package-refs.txt"
+      Lines="@(_Lint4sgPackageReference->'R|%(Identity)|%(Version)|%(VersionOverride)|%(PrivateAssets)|%(IncludeAssets)|%(ExcludeAssets)');@(PackageVersion->'C|%(Identity)|%(Version)')"
+      Overwrite="true" />
+    <ItemGroup>
+      <AdditionalFiles Include="$(IntermediateOutputPath)lint4sg-package-refs.txt" />
+    </ItemGroup>
+  </Target>
+</Project>

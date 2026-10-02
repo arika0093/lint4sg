@@ -8,3 +8,5 @@ A strict Roslyn analyzer that enforces best practices for **.NET Source Generato
 Source Generators have strict performance and correctness requirements that differ significantly from ordinary C# code. This analyzer catches common mistakes at compile time, acting as a safety net especially when AI coding assistants generate Source Generator code.
 
 See: [GitHub Repository](https://github.com/arika0093/lint4sg)
+
+The package includes a `buildTransitive` target that passes evaluated NuGet package metadata to LSG012 and LSG014. No manual project-file `AdditionalFiles` entry is required.

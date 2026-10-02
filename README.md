@@ -16,6 +16,8 @@ Add `lint4sg` as a project reference in your Source Generator project:
 dotnet add package lint4sg
 ```
 
+The NuGet package includes a `buildTransitive` target that supplies evaluated `PackageReference` metadata to LSG012 and LSG014. No manual `.csproj` `AdditionalFiles` entry is needed.
+
 ### LLM prompts
 
 When using an LLM to generate source generator code, include the following instruction in your prompt to enable lint4sg checks:
@@ -42,7 +44,7 @@ readme: https://raw.githubusercontent.com/arika0093/lint4sg/refs/heads/main/READ
 | [LSG005](#lsg005) | Error | Missing ThrowIfCancellationRequested in loop | Loops must check CT on each iteration |
 | [LSG006](#lsg006) | Error | Non-deterministic value in RegisterSourceOutput | Non-equatable types defeat Roslyn caching |
 | [LSG007](#lsg007) | Error | Non-deterministic collection in RegisterSourceOutput | Arrays/lists use reference equality |
-| [LSG008](#lsg008) | Warning | Non-deterministic SyntaxProvider return value | May cause unnecessary pipeline re-execution |
+| [LSG008](#lsg008) | Warning | Non-deterministic incremental pipeline value | Project unsafe values to small equatable models early |
 | [LSG009](#lsg009) | Error | Avoid NormalizeWhitespace | O(n) syntax-tree traversal — use a writer instead |
 | [LSG010](#lsg010) | Error | Excessive whitespace in AppendLine | Use indentation-aware StringBuilder |
 | [LSG011](#lsg011) | Error | Use raw string literal | Replace 3+ consecutive AppendLine calls |
@@ -56,6 +58,8 @@ readme: https://raw.githubusercontent.com/arika0093/lint4sg/refs/heads/main/READ
 | [LSG019](#lsg019) | Error | Delay Collect | Apply item-level filtering and projection before whole-set aggregation |
 | [LSG020](#lsg020) | Error | Nested tuple proliferation in pipeline composition | Avoid repeated `Left` / `Right` tuple navigation |
 | [LSG021](#lsg021) | Error | Use fully qualified type names in generated output | Emit type names with `global::` to avoid ambiguity |
+| [LSG022](#lsg022) | Error | Avoid untracked generator inputs | Use tracked Roslyn inputs instead of ambient state |
+| [LSG023](#lsg023) | Error | Keep incremental generators stateless | Store per-compilation state in providers, not generator fields |
 
 ---
 
@@ -257,9 +261,9 @@ Source: [Avoiding performance pitfalls in incremental generators](https://andrew
 
 ### LSG008
 
-**Non-deterministic SyntaxProvider return value** *(warning)*
+**Non-deterministic incremental pipeline value** *(warning)*
 
-The same equatability requirements from LSG006/LSG007 apply to the values returned by `ForAttributeWithMetadataName` and `CreateSyntaxProvider` transforms. If the transform returns a non-equatable type, Roslyn's caching will not work. This is a warning rather than an error because some unavoidable patterns exist.
+The equatability requirements from LSG006/LSG007 apply at intermediate `Select`, `SelectMany`, `Combine`, and `Collect` stages as well as syntax provider transforms. Project Roslyn compiler state into an immutable, value-equatable model before passing it downstream. This is a warning because some unavoidable patterns exist.
 
 Source: [Incremental Generators cookbook](https://github.com/dotnet/roslyn/blob/216a7f2f17633d4eea15c15c68f2bfdcdb797f0f/docs/features/incremental-generators.cookbook.md#pipeline-model-design), [Avoiding performance pitfalls in incremental generators](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/)
 
@@ -685,6 +689,37 @@ internal sealed class IndentedStringBuilder
 }
 ```
 
+**Avoid untracked generator inputs**
+
+File-system, environment, clock, random, process, and network reads can change without invalidating the incremental graph. Use `AdditionalTextsProvider` for files and `AnalyzerConfigOptionsProvider` for build configuration.
+
+```csharp
+// ❌ LSG022
+var schema = File.ReadAllText("schema.json");
+
+// ✅ Track the file through Roslyn
+var schemas = context.AdditionalTextsProvider;
+```
+
+Pure path operations such as `Path.Combine` are allowed.
+
+---
+
+### LSG023
+
+**Keep incremental generators stateless**
+
+Generator instances may be reused. Mutable instance fields and settable properties can leak state between compilations; represent per-project values in the incremental pipeline instead. `const`, static members, and readonly instance configuration are allowed.
+
+```csharp
+// ❌ LSG023
+private int _generatedCount;
+
+// ✅ Put per-compilation data in a provider
+var options = context.AnalyzerConfigOptionsProvider;
+```
+
+LSG008 also checks intermediate `Select`, `SelectMany`, `Combine`, and `Collect` checkpoints, so compiler state should be converted to immutable value models before it is carried downstream.
 
 ## License
 

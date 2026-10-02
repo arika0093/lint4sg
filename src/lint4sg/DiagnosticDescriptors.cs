@@ -91,10 +91,10 @@ internal static class DiagnosticDescriptors
     // LSG008: Non-deterministic SyntaxProvider return value
     public static readonly DiagnosticDescriptor LSG008 = CreateDescriptor(
         id: "LSG008",
-        title: "Non-deterministic SyntaxProvider return value",
-        messageFormat: "SyntaxProvider transform returns a non-deterministic type '{0}'. This may cause unnecessary regeneration. Use equatable types for better caching.",
+        title: "Non-deterministic incremental pipeline value",
+        messageFormat: "This incremental pipeline stage carries a non-deterministic type '{0}'. Project it to an immutable, value-equatable type before passing it downstream.",
         defaultSeverity: DiagnosticSeverity.Warning,
-        description: "SyntaxProvider transforms should return equatable/deterministic types to enable Roslyn's caching. Non-deterministic types may cause the pipeline to re-execute unnecessarily."
+        description: "Values retained by incremental transformations should be immutable and value-equatable. Compiler state and reference-equality collections should be projected into small deterministic models as early as possible."
     );
 
     // LSG009: NormalizeWhitespace usage
@@ -212,5 +212,21 @@ internal static class DiagnosticDescriptors
         messageFormat: "Type names emitted via AppendLine/Append must be fully qualified and start with global::",
         defaultSeverity: DiagnosticSeverity.Error,
         description: "Type names written into generated source should use fully qualified names including global:: to avoid ambiguity and namespace collisions. Built-in types such as int and string are exempt."
+    );
+
+    public static readonly DiagnosticDescriptor LSG022 = CreateDescriptor(
+        id: "LSG022",
+        title: "Avoid untracked generator inputs",
+        messageFormat: "'{0}' reads ambient or external state that is not tracked by the incremental pipeline. Use AdditionalTextsProvider or AnalyzerConfigOptionsProvider for build inputs.",
+        defaultSeverity: DiagnosticSeverity.Error,
+        description: "Source generators must derive output from tracked compiler inputs. File-system, environment, clock, random, process, and network reads can change without invalidating the incremental graph."
+    );
+
+    public static readonly DiagnosticDescriptor LSG023 = CreateDescriptor(
+        id: "LSG023",
+        title: "Keep incremental generators stateless",
+        messageFormat: "Generator member '{0}' is mutable. Store per-compilation state in the incremental pipeline instead.",
+        defaultSeverity: DiagnosticSeverity.Error,
+        description: "Incremental generator instances may be reused. Mutable instance state can leak between compilations and must be represented by incremental providers."
     );
 }

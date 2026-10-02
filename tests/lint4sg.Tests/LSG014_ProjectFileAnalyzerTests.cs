@@ -60,4 +60,28 @@ public class LSG014_ProjectFileAnalyzerTests
                 .WithArguments("5.0.0")
         );
     }
+
+    [Fact]
+    public async Task EvaluatedCpmVersion_ReportsLSG014()
+    {
+        await ProjectFileAnalyzerTestHelpers.RunEvaluatedPackageTestAsync(
+            "R|Microsoft.CodeAnalysis.CSharp||||||\nC|Microsoft.CodeAnalysis.CSharp|5.2.0",
+            new DiagnosticResult("LSG014", DiagnosticSeverity.Warning).WithArguments("5.2.0"));
+    }
+
+    [Fact]
+    public async Task EvaluatedVersionOverride_TakesPrecedenceOverCentralVersion()
+    {
+        await ProjectFileAnalyzerTestHelpers.RunEvaluatedPackageTestAsync(
+            "R|Microsoft.CodeAnalysis.CSharp||5.2.0||||\nC|Microsoft.CodeAnalysis.CSharp|4.8.0",
+            new DiagnosticResult("LSG014", DiagnosticSeverity.Warning).WithArguments("5.2.0"));
+    }
+
+    [Fact]
+    public async Task SourceOnlyPackage_IsNotReportedButRuntimeDependencyIs()
+    {
+        await ProjectFileAnalyzerTestHelpers.RunEvaluatedPackageTestAsync(
+            "CodeGen.Helper|1.0.0|||build;analyzers;contentfiles;none|\nCodeGen.Runtime|2.0.0|||compile;runtime|",
+            new DiagnosticResult("LSG012", DiagnosticSeverity.Warning).WithArguments("CodeGen.Runtime"));
+    }
 }

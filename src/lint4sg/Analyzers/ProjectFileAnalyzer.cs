@@ -40,6 +40,12 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
         var file = context.AdditionalFile;
         var filePath = file.Path;
 
+        if (filePath.EndsWith("lint4sg-package-refs.txt", StringComparison.OrdinalIgnoreCase))
+        {
+            AnalyzeEvaluatedPackageReferences(context, file.GetText(context.CancellationToken)?.ToString());
+            return;
+        }
+
         // Only process .csproj files
         if (!filePath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             return;
@@ -51,6 +57,79 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
         var text = content.ToString();
         AnalyzeProjectFileContent(context, text, content, filePath);
     }
+
+    private static void AnalyzeEvaluatedPackageReferences(AdditionalFileAnalysisContext context, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        var packageLines = (text ?? string.Empty)
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(static line => line.Split('|'))
+            .ToArray();
+        var centralVersions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var fields in packageLines)
+        {
+            if (fields.Length >= 3 && fields[0] == "C" && fields[1].Length > 0)
+                centralVersions[fields[1].Trim()] = fields[2].Trim();
+        }
+
+        foreach (var fields in packageLines)
+        {
+            var isTagged = fields.Length > 0 && fields[0] == "R";
+            if (fields.Length >= 3 && fields[0] == "C")
+                continue;
+            if (fields.Length < (isTagged ? 7 : 6))
+                continue;
+
+            var name = isTagged ? fields[1].Trim() : fields[0].Trim();
+            var version = isTagged ? fields[2].Trim() : fields[1].Trim();
+            var versionOverride = isTagged ? fields[3].Trim() : fields[2].Trim();
+            if (!string.IsNullOrWhiteSpace(versionOverride))
+                version = versionOverride;
+            if (string.IsNullOrWhiteSpace(version)
+                && centralVersions.TryGetValue(name, out var centralVersion))
+                version = centralVersion;
+            var privateAssets = fields[isTagged ? 4 : 3];
+            var includeAssets = fields[isTagged ? 5 : 4];
+            var excludeAssets = fields[isTagged ? 6 : 5];
+            if (name.Length == 0)
+                continue;
+
+            if (string.Equals(name, CodeAnalysisCSharpPackage, StringComparison.OrdinalIgnoreCase)
+                && TryParseVersion(version, out var resolvedVersion)
+                && resolvedVersion >= MaxRecommendedVersion)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(DiagnosticDescriptors.LSG014, Location.None, version));
+            }
+
+            if (!IsAllowedPackage(name)
+                && !ContainsAllPrivateAssets(privateAssets)
+                && HasCompileOrRuntimeAssets(includeAssets, excludeAssets))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(DiagnosticDescriptors.LSG012, Location.None, name));
+            }
+        }
+    }
+
+    private static bool IsAllowedPackage(string packageName) => AllowedPackagePrefixes.Any(prefix =>
+        packageName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
+    private static bool HasCompileOrRuntimeAssets(string includeAssets, string excludeAssets)
+    {
+        var included = ParseAssetList(includeAssets);
+        var excluded = ParseAssetList(excludeAssets);
+        var includesAllByDefault = included.Count == 0 || included.Contains("all");
+        var hasCompile = (includesAllByDefault || included.Contains("compile"))
+            && !excluded.Contains("all") && !excluded.Contains("compile");
+        var hasRuntime = (includesAllByDefault || included.Contains("runtime"))
+            && !excluded.Contains("all") && !excluded.Contains("runtime");
+        return hasCompile || hasRuntime;
+    }
+
+    private static HashSet<string> ParseAssetList(string value) => new(
+        value.Split(new[] { ';', ',', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries),
+        StringComparer.OrdinalIgnoreCase);
 
     private static void AnalyzeProjectFileContent(
         AdditionalFileAnalysisContext context,
@@ -86,6 +165,12 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
             var privateAssets =
                 (string?)element.Attribute("PrivateAssets")
                 ?? element.Element("PrivateAssets")?.Value;
+            var includeAssets =
+                (string?)element.Attribute("IncludeAssets")
+                ?? element.Element("IncludeAssets")?.Value;
+            var excludeAssets =
+                (string?)element.Attribute("ExcludeAssets")
+                ?? element.Element("ExcludeAssets")?.Value;
 
             // Map the element's start line back to a SourceText span for diagnostics.
             var lineInfo = element as IXmlLineInfo;
@@ -114,17 +199,9 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
             }
 
             // LSG012: External (non-CodeAnalysis) NuGet package
-            var isAllowed = false;
-            foreach (var prefix in AllowedPackagePrefixes)
-            {
-                if (packageName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    isAllowed = true;
-                    break;
-                }
-            }
-
-            if (!isAllowed && !ContainsAllPrivateAssets(privateAssets))
+            if (!IsAllowedPackage(packageName)
+                && !ContainsAllPrivateAssets(privateAssets)
+                && HasCompileOrRuntimeAssets(includeAssets ?? string.Empty, excludeAssets ?? string.Empty))
             {
                 context.ReportDiagnostic(
                     Diagnostic.Create(DiagnosticDescriptors.LSG012, location, packageName)
@@ -138,7 +215,7 @@ public sealed class ProjectFileAnalyzer : DiagnosticAnalyzer
         if (string.IsNullOrWhiteSpace(privateAssets))
             return false;
 
-        return privateAssets
+        return (privateAssets ?? string.Empty)
             .Split(new[] { ';', ',', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Any(static token => string.Equals(token, "all", StringComparison.OrdinalIgnoreCase));
     }

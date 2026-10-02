@@ -41,5 +41,6 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="buildTransitive\lint4sg.targets" Pack="true" PackagePath="buildTransitive\lint4sg.targets" />
   </ItemGroup>
 </Project>

@@ -10,7 +10,7 @@ namespace lint4sg.Analyzers;
 /// <summary>
 /// LSG006: Non-deterministic (non-collection) value in RegisterSourceOutput/RegisterImplementationSourceOutput.
 /// LSG007: Non-deterministic collection value in RegisterSourceOutput/RegisterImplementationSourceOutput.
-/// LSG008: Non-deterministic SyntaxProvider return value (warning).
+/// LSG008: Non-deterministic value retained at an incremental pipeline checkpoint (warning).
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
@@ -28,39 +28,21 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             "ForAttributeWithMetadataName"
         );
 
-    // Non-deterministic types that should not be passed to RegisterSourceOutput
-    private static readonly ImmutableHashSet<string> NonDeterministicTypeNames =
-        ImmutableHashSet.Create(
-            StringComparer.Ordinal,
-            "ISymbol",
-            "SyntaxNode",
-            "SemanticModel",
-            "Compilation",
-            "INamedTypeSymbol",
-            "IMethodSymbol",
-            "IPropertySymbol",
-            "IFieldSymbol",
-            "IEventSymbol",
-            "IParameterSymbol",
-            "ITypeSymbol",
-            "ITypeParameterSymbol",
-            "IAssemblySymbol",
-            "IModuleSymbol",
-            "INamespaceSymbol",
-            "ILocalSymbol",
-            "ILabelSymbol",
-            "IRangeVariableSymbol",
-            "IDiscardSymbol",
-            "IFunctionPointerTypeSymbol",
-            "IPointerTypeSymbol",
-            "IDynamicTypeSymbol",
-            "IArrayTypeSymbol",
-            "CompilationUnitSyntax",
-            "ClassDeclarationSyntax",
-            "MethodDeclarationSyntax",
-            "PropertyDeclarationSyntax",
-            "AttributeSyntax"
-        );
+    private static readonly ImmutableHashSet<string> PipelineTransformMethods =
+        ImmutableHashSet.Create(StringComparer.Ordinal, "Select", "SelectMany", "Combine", "Collect");
+
+    private static readonly string[] RoslynStateMetadataNames =
+    {
+        "Microsoft.CodeAnalysis.ISymbol",
+        "Microsoft.CodeAnalysis.SyntaxNode",
+        "Microsoft.CodeAnalysis.SemanticModel",
+        "Microsoft.CodeAnalysis.Compilation",
+        "Microsoft.CodeAnalysis.Location",
+        "Microsoft.CodeAnalysis.SyntaxReference",
+        "Microsoft.CodeAnalysis.AdditionalText",
+        "Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions",
+        "Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptionsProvider",
+    };
 
     // Collection types that use reference equality
     private static readonly ImmutableHashSet<string> CollectionTypeNames = ImmutableHashSet.Create(
@@ -106,6 +88,46 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         {
             AnalyzeSyntaxProviderReturn(context, invocation);
         }
+        else if (PipelineTransformMethods.Contains(methodName))
+        {
+            AnalyzePipelineCheckpoint(context, invocation);
+        }
+    }
+
+    private static void AnalyzePipelineCheckpoint(
+        SyntaxNodeAnalysisContext context,
+        InvocationExpressionSyntax invocation
+    )
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            return;
+
+        var result = GetProviderElementType(context.SemanticModel.GetTypeInfo(invocation).Type);
+        if (result == null)
+            return;
+
+        // Avoid repeating a diagnostic when a stage merely carries the exact same
+        // unsafe value type forward. Report when the checkpoint changes its shape.
+        var input = GetProviderElementType(context.SemanticModel.GetTypeInfo(memberAccess.Expression).Type);
+        if (input != null && SymbolEqualityComparer.Default.Equals(input, result))
+            return;
+
+        CheckTypeForNonDeterminism(
+            context,
+            result,
+            invocation.GetLocation(),
+            isRegisterMethod: false,
+            new HashSet<string>()
+        );
+    }
+
+    private static ITypeSymbol? GetProviderElementType(ITypeSymbol? type)
+    {
+        if (type is INamedTypeSymbol named && named.IsGenericType && named.TypeArguments.Length > 0
+            && (named.Name == "IncrementalValueProvider" || named.Name == "IncrementalValuesProvider"))
+            return named.TypeArguments[0];
+
+        return null;
     }
 
     private static void AnalyzeRegisterSourceOutput(
@@ -129,7 +151,7 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             type,
             invocation.GetLocation(),
             isRegisterMethod: true,
-            ImmutableHashSet<string>.Empty
+            new HashSet<string>()
         );
     }
 
@@ -159,7 +181,7 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
                     context,
                     namedType.TypeArguments[0],
                     invocation.GetLocation(),
-                    ImmutableHashSet<string>.Empty
+                    new HashSet<string>()
                 );
             }
         }
@@ -169,7 +191,7 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         SyntaxNodeAnalysisContext context,
         ITypeSymbol type,
         Location location,
-        ImmutableHashSet<string> visitedTypeIds
+        HashSet<string> visitedTypeIds
     )
     {
         switch (type)
@@ -210,7 +232,7 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         ITypeSymbol type,
         Location location,
         bool isRegisterMethod,
-        ImmutableHashSet<string> visitedTypeIds
+        HashSet<string> visitedTypeIds
     )
     {
         // Unwrap IncrementalValueProvider<T> / IncrementalValuesProvider<T>
@@ -227,7 +249,6 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
                 type = namedTypeOuter.TypeArguments[0];
         }
 
-        var typeName = type.Name;
         var fullTypeName = type.ToDisplayString();
 
         // Primitive/runtime special types are deterministic by themselves, so we can stop here.
@@ -273,8 +294,9 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // Well-known non-deterministic type names -> LSG006 / LSG008
-        if (NonDeterministicTypeNames.Contains(typeName))
+        // Compare against Roslyn's actual symbols so a user-defined type named
+        // "Compilation" or "SyntaxNode" does not produce a false positive.
+        if (IsRoslynStateType(context.Compilation, type))
         {
             ReportDiagnostic(
                 context,
@@ -289,25 +311,6 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
 
         if (type is not INamedTypeSymbol checkType)
             return;
-
-        // Implements ISymbol or derives from SyntaxNode/SemanticModel/Compilation -> LSG006 / LSG008
-        if (
-            ImplementsInterface(checkType, "ISymbol", "Microsoft.CodeAnalysis")
-            || DerivesFrom(checkType, "SyntaxNode", "Microsoft.CodeAnalysis")
-            || DerivesFrom(checkType, "SemanticModel", "Microsoft.CodeAnalysis")
-            || DerivesFrom(checkType, "Compilation", "Microsoft.CodeAnalysis")
-        )
-        {
-            ReportDiagnostic(
-                context,
-                location,
-                isRegisterMethod,
-                DiagnosticDescriptors.LSG006,
-                DiagnosticDescriptors.LSG008,
-                fullTypeName
-            );
-            return;
-        }
 
         var hasValueEquality = HasValueEquality(checkType);
 
@@ -329,7 +332,8 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         var typeId = checkType.ToDisplayString();
         if (visitedTypeIds.Contains(typeId))
             return;
-        var updatedVisited = visitedTypeIds.Add(typeId);
+        visitedTypeIds.Add(typeId);
+        var updatedVisited = visitedTypeIds;
 
         // Tuples: check each element type recursively
         if (checkType.IsTupleType)
@@ -430,33 +434,32 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         );
     }
 
-    private static bool ImplementsInterface(
-        INamedTypeSymbol type,
-        string interfaceName,
-        string namespaceName
-    )
+    private static bool IsRoslynStateType(Compilation compilation, ITypeSymbol type)
     {
-        return type.AllInterfaces.Any(i =>
-            i.Name == interfaceName && i.ContainingNamespace?.ToString() == namespaceName
-        );
+        foreach (var metadataName in RoslynStateMetadataNames)
+        {
+            var knownType = compilation.GetTypeByMetadataName(metadataName);
+            if (knownType != null
+                && !SymbolEqualityComparer.Default.Equals(knownType.ContainingAssembly, compilation.Assembly)
+                && IsOrDerivesFrom(type, knownType))
+                return true;
+        }
+
+        var symbol = compilation.GetTypeByMetadataName("Microsoft.CodeAnalysis.ISymbol");
+        return symbol != null
+            && !SymbolEqualityComparer.Default.Equals(symbol.ContainingAssembly, compilation.Assembly)
+            && type is INamedTypeSymbol named
+            && named.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, symbol));
     }
 
-    private static bool DerivesFrom(
-        INamedTypeSymbol type,
-        string baseTypeName,
-        string namespaceName
-    )
+    private static bool IsOrDerivesFrom(ITypeSymbol type, INamedTypeSymbol knownType)
     {
-        var current = type.BaseType;
-        while (current != null)
+        for (var current = type as INamedTypeSymbol; current != null; current = current.BaseType)
         {
-            if (
-                current.Name == baseTypeName
-                && current.ContainingNamespace?.ToString() == namespaceName
-            )
+            if (SymbolEqualityComparer.Default.Equals(current, knownType))
                 return true;
-            current = current.BaseType;
         }
+
         return false;
     }
 
@@ -491,13 +494,37 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         if (type.SpecialType == SpecialType.System_String)
             return true;
 
-        if (type.IsTupleType || type.IsRecord || type.TypeKind is TypeKind.Struct or TypeKind.Enum)
+        if (type.TypeKind == TypeKind.Enum || type.IsTupleType)
             return true;
+
+        if (type.TypeKind == TypeKind.Struct)
+            return HasImmutableInstanceState(type);
 
         if (type.TypeKind != TypeKind.Class)
             return false;
 
-        return OverridesObjectEquals(type) || ImplementsIEquatableOfSelf(type);
+        // A custom equality implementation does not make mutable reference state
+        // safe for incremental caching. Accept explicit value wrappers only when
+        // their instance state is immutable.
+        return HasImmutableInstanceState(type)
+            && (type.IsRecord || OverridesObjectEquals(type) || ImplementsIEquatableOfSelf(type));
+    }
+
+    private static bool HasImmutableInstanceState(INamedTypeSymbol type)
+    {
+        foreach (var member in type.GetMembers())
+        {
+            if (member.IsStatic || member.IsImplicitlyDeclared)
+                continue;
+
+            if (member is IFieldSymbol field && !field.IsReadOnly && !field.IsConst)
+                return false;
+            if (member is IPropertySymbol property
+                && property.SetMethod is { IsInitOnly: false })
+                return false;
+        }
+
+        return true;
     }
 
     private static bool OverridesObjectEquals(INamedTypeSymbol type)
@@ -560,7 +587,7 @@ public sealed class DeterministicValueAnalyzer : DiagnosticAnalyzer
         ITypeSymbol type,
         Location location,
         bool isRegisterMethod,
-        ImmutableHashSet<string> visitedTypeIds
+        HashSet<string> visitedTypeIds
     )
     {
         if (type is IArrayTypeSymbol arrayType)

@@ -1,0 +1,76 @@
+name: Source generator dogfood
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tools/run-dogfood.ps1'
+      - '.github/workflows/dogfood.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  dogfood:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout lint4sg
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Restore, build, and test lint4sg
+        run: |
+          dotnet restore lint4sg.slnx
+          dotnet test lint4sg.slnx --no-restore --verbosity minimal
+
+      - name: Pack local lint4sg
+        run: dotnet pack src/lint4sg/lint4sg.csproj --no-restore --configuration Release --output artifacts
+
+      - name: Checkout Configlue and SparseFragments
+        uses: actions/checkout@v4
+        with:
+          repository: arika0093/Configlue
+          ref: 3acdebc2254dadc1b8fc1d3540b005e3e275c07a
+          path: dogfood/Configlue
+          fetch-depth: 0
+
+      - name: Checkout Linqraft
+        uses: actions/checkout@v4
+        with:
+          repository: arika0093/Linqraft
+          ref: a1b72ec8aa2efb28c2507072f42a7a06b5b231b3
+          path: dogfood/Linqraft
+          fetch-depth: 0
+
+      - name: Build pinned generator projects and record diagnostics
+        shell: pwsh
+        run: |
+          ./tools/run-dogfood.ps1 `
+            -FeedPath ./artifacts `
+            -ResultsPath ./dogfood-results `
+            -GeneratorProjects @(
+              'dogfood/Configlue/src/tools/Configlue.Generator/Configlue.Generator.csproj',
+              'dogfood/Configlue/src/fragments/SparseFragments.Generator/SparseFragments.Generator.csproj',
+              'dogfood/Linqraft/src/Linqraft.Core/Linqraft.Core.csproj'
+            )
+
+      - name: Upload diagnostic and analyzer timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-generator-dogfood
+          path: dogfood-results/
+          if-no-files-found: warn

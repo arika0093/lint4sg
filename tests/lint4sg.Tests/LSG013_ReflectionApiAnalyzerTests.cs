@@ -8,7 +8,7 @@ namespace lint4sg.Tests;
 public class LSG013_ReflectionApiAnalyzerTests
 {
     [Fact]
-    public async Task UsingSystemReflection_ReportsLSG013()
+    public async Task UsingSystemReflectionWithoutUsingAnApi_DoesNotReport()
     {
         var code = """
             using System.Reflection;
@@ -21,14 +21,7 @@ public class LSG013_ReflectionApiAnalyzerTests
             }
             """;
 
-        var expected = new DiagnosticResult(
-            "LSG013",
-            Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
-        )
-            .WithSpan(1, 1, 1, 25)
-            .WithArguments("System.Reflection");
-
-        var test = TestHelpers.CreateTest<ReflectionApiAnalyzer>(code, expected);
+        var test = TestHelpers.CreateTest<ReflectionApiAnalyzer>(code);
         await test.RunAsync();
     }
 
@@ -95,5 +88,51 @@ public class LSG013_ReflectionApiAnalyzerTests
 
         var test = TestHelpers.CreateTest<ReflectionApiAnalyzer>(code);
         await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task TypeReflectionCallWithAlias_ReportsLSG013()
+    {
+        var code = "using T = System.Type; class Generator { object Run() { T type = typeof(string); return type.GetProperties(); } }";
+        var start = code.IndexOf("type.GetProperties()", System.StringComparison.Ordinal) + 1;
+        var test = TestHelpers.CreateTest<ReflectionApiAnalyzer>(code,
+            new DiagnosticResult("LSG013", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+                .WithSpan(1, start, 1, start + "type.GetProperties()".Length).WithArguments("GetProperties"));
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task UnrelatedMethodWithReflectionLikeName_DoesNotReport()
+    {
+        var code = "class Helper { public void GetProperties() {} } class Generator { void Run() => new Helper().GetProperties(); }";
+        var test = TestHelpers.CreateTest<ReflectionApiAnalyzer>(code);
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task UserDefinedTypeInReflectionNamespace_DoesNotReport()
+    {
+        var code = "namespace System.Reflection { public class MethodInfo { public void Invoke() {} } } class G { void M() { new System.Reflection.MethodInfo().Invoke(); } }";
+        await TestHelpers.CreateTest<ReflectionApiAnalyzer>(code).RunAsync();
+    }
+
+    [Fact]
+    public async Task TypeAssemblyProperty_ReportsLSG013()
+    {
+        var code = "class G { object M() => typeof(string).Assembly; }";
+        await TestHelpers.CreateTest<ReflectionApiAnalyzer>(code,
+            new DiagnosticResult("LSG013", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+                .WithSpan(1, 25, 1, 48).WithArguments("Assembly")).RunAsync();
+    }
+
+    [Fact]
+    public async Task ReflectionWrappedByProjectHelper_ReportsLSG013()
+    {
+        var code = "using System; static class Helper { public static object GetProperties(Type type) => type.GetProperties(); } class G { object Run() => Helper.GetProperties(typeof(string)); }";
+        var fragment = "type.GetProperties()";
+        var start = code.IndexOf(fragment, System.StringComparison.Ordinal) + 1;
+        await TestHelpers.CreateTest<ReflectionApiAnalyzer>(code,
+            new DiagnosticResult("LSG013", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+                .WithSpan(1, start, 1, start + fragment.Length).WithArguments("GetProperties")).RunAsync();
     }
 }
